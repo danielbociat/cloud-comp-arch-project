@@ -129,5 +129,5 @@ if __name__ == '__main__':
     subprocess.run(["kubectl", "delete", "jobs", "--all"])
     subprocess.run(["kubectl", "delete", "pods", "--all"])
 
-    # subprocess.run(["kops", "delete", "cluster", "--name", f"part2b.k8s.local", "--yes"], check=True)
+    subprocess.run(["kops", "delete", "cluster", "--name", f"part2b.k8s.local", "--yes"], env=env, check=True)
     # print("Successfully deleted cluster!")
