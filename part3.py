@@ -12,6 +12,19 @@ env["KOPS_STATE_STORE"] = "gs://cca-eth-2025-group-008-dbociat"
 threads = [1, 2, 4, 8]
 jobs = ["blackscholes", "canneal", "dedup", "ferret", "freqmine", "radix", "vips"] 
 
+nodes = ["node-a-2core", "node-b-2core", "node-c-4core", "node-d-4core"]
+
+config = {
+    "blackscholes" : [nodes[0],1],
+    "canneal" : [nodes[0],1],
+    "dedup" : [nodes[0],1],
+    "ferret" : [nodes[0],1],
+    "freqmine" : [nodes[0],1],
+    "radix" : [nodes[0],1],
+    "vips" : [nodes[0],1],
+    "memecached" : [nodes[0], 1]
+}
+
 NUM_RUNS = 1
 
 def is_job_completed(kubectl_output):
@@ -56,18 +69,20 @@ def write_run_data(filename, no_threads, job_name, real_time, user_time, sys_tim
     with open(filename, "a") as f:
         f.write(line)
 
-def update_template(filename, num_threads):
+def update_template(filename, node_label, num_threads):
     script_dir = os.path.dirname(__file__)
-    rel_path = f"parsec-benchmarks/part3/{filename}-template.yaml"
+    rel_path = f"part3/{filename}-template.yaml"
     abs_file_path = os.path.join(script_dir, rel_path)
 
     with open(abs_file_path) as f:
         schemas = f.read()
 
     schemas = schemas.replace("<n>", str(num_threads))
+    schemas = schemas.replace("<node_label>", node_label)
+    schemas = schemas.replace("<cores>", "0")
 
     script_dir = os.path.dirname(__file__)
-    rel_path = f"parsec-benchmarks/part3/{filename}.yaml"
+    rel_path = f"part3/{filename}.yaml"
     abs_file_path = os.path.join(script_dir, rel_path)
 
     with open(abs_file_path, "w") as f:
@@ -96,21 +111,30 @@ if __name__ == '__main__':
 
     current_time = datetime.now()
     formatted_time = current_time.strftime("%d-%m-%Y-%H-%M")    
+    
+    for job in jobs:
+        update_template(job, config[job][0], config[job][1])
+    update_template("memecached", config["memecached"][0], config["memecached"][1])
 
-    # Run the processes
-    for i in range(NUM_RUNS):
-        for job in jobs:
-            job_name = f"parsec-{job}"
+    subprocess.run(["glcoud", "compute", "scp", "update_mcperf.sh",  f"ubuntu@{client_agent_a}:~/", "--zone", "europe-west1-b", 
+                    "--ssh-key-file", "~/.ssh/cloud-computing"])
+    subprocess.run(["glcoud", "compute", "ssh", f"ubuntu@{client_agent_a}", "--zone", "europe-west1-b", 
+                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command", "chmod +x ~/update_mcperf.sh && ~/update_mcperf.sh"])
+    subprocess.run(["glcoud", "compute", "ssh", f"ubuntu@{client_agent_a}", "--zone", "europe-west1-b", 
+                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command", "./mcperf -T 2 -A"])
 
-            subprocess.run(["kubectl", "create", "-f", f"parsec-benchmarks/part3/{job_name}.yaml"], env=env, check=True)
+    # # Run the processes
+    # for i in range(NUM_RUNS):
+    #     for job in jobs:
+    #         subprocess.run(["kubectl", "create", "-f", f"part3/{job}.yaml"], env=env, check=True)
                 
-        # Get results
-        subprocess.run(["kubectl", "get", "pods", "-o", "json", ">", f"results-{i}.json"], check=True)
-        subprocess.run(["python3", "get_time.py", f"results-{i}.json"], check=True)
+    #     # Get results
+    #     subprocess.run(["kubectl", "get", "pods", "-o", "json", ">", f"results-{i}.json"], check=True)
+    #     subprocess.run(["python3", "get_time.py", f"results-{i}.json"], check=True)
 
-    # Make sure there are no witnesses
-    subprocess.run(["kubectl", "delete", "jobs", "--all"])
-    subprocess.run(["kubectl", "delete", "pods", "--all"])
+    # # Make sure there are no witnesses
+    # subprocess.run(["kubectl", "delete", "jobs", "--all"])
+    # subprocess.run(["kubectl", "delete", "pods", "--all"])
 
     # subprocess.run(["kops", "delete", "cluster", "--name", f"part3.k8s.local", "--yes"], check=True)
     # print("Successfully deleted cluster!")
