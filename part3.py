@@ -108,7 +108,6 @@ if __name__ == '__main__':
         if "client-measure" in line:
             client_measure = line.split()[0]
 
-
     current_time = datetime.now()
     formatted_time = current_time.strftime("%d-%m-%Y-%H-%M")    
     
