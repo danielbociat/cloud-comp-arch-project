@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parsec-vips
+  name: vips
   labels:
-    name: parsec-vips
+    name: vips
 spec:
   template:
     spec:
       containers:
       - image: anakli/cca:parsec_vips
-        name: parsec-vips
+        name: vips
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "taskset -c <cores> ./run -a run -S parsec -p vips -i native -n <n>"]

@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parsec-radix
+  name: radix
   labels:
-    name: parsec-radix
+    name: radix
 spec:
   template:
     spec:
       containers:
       - image: anakli/cca:splash2x_radix
-        name: parsec-radix
+        name: radix
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "taskset -c <cores> ./run -a run -S splash2x -p radix -i native -n <n>"]

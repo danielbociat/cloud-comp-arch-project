@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parsec-freqmine
+  name: freqmine
   labels:
-    name: parsec-freqmine
+    name: freqmine
 spec:
   template:
     spec:
       containers:
       - image: anakli/cca:parsec_freqmine
-        name: parsec-freqmine
+        name: freqmine
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "taskset -c <cores> ./run -a run -S parsec -p freqmine -i native -n <n>"]

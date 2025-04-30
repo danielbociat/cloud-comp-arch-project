@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parsec-dedup
+  name: dedup
   labels:
-    name: parsec-dedup
+    name: dedup
 spec:
   template:
     spec:
       containers:
       - image: anakli/cca:parsec_dedup
-        name: parsec-dedup
+        name: dedup
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "taskset -c <cores> ./run -a run -S parsec -p dedup -i native -n <n>"]
