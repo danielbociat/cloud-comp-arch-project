@@ -17,17 +17,21 @@ jobs = ["blackscholes", "canneal", "dedup", "ferret", "freqmine", "radix", "vips
 nodes = ["node-a-2core", "node-b-2core", "node-c-4core", "node-d-4core"]
 
 config = {
-    "blackscholes" : (nodes[0],"0,1"),
-    "canneal" : (nodes[1],"0,1"),
-    "dedup" : (nodes[0],"0,1"),
-    "ferret" : (nodes[1],"0,1"),
-    "freqmine" : (nodes[3],"0,1"),
-    "vips" : (nodes[1],"0,1"),
-    "radix" : (nodes[3],"0,1"),
-    "memcached" : (nodes[2],"0,1,2,3")
+    "blackscholes" : (nodes[1],"0,1", 8),
+    "canneal" : (nodes[2],"0,1,2,3", 8),
+    "dedup" : (nodes[1],"0,1", 8),
+    "ferret" : (nodes[2],"0,1,2,3", 8),
+    "freqmine" : (nodes[3],"0,1,2,3", 8),
+    "vips" : (nodes[3],"0,1,2,3", 8),
+    "radix" : (nodes[3],"0,1,2,3", 8),
+    "memcached" : (nodes[0],"0", 1)
 }
 
 NUM_RUNS = 1
+
+def log_run_results(parsec_output, memcached_output):
+    pass
+
 
 def is_job_completed(kubectl_output):
     lines = kubectl_output.strip().splitlines()
@@ -71,15 +75,13 @@ def write_run_data(filename, no_threads, job_name, real_time, user_time, sys_tim
     with open(filename, "a") as f:
         f.write(line)
 
-def update_template(filename, node_label, cores):
+def update_template(filename, node_label, cores, num_threads):
     script_dir = os.path.dirname(__file__)
     rel_path = f"part3/{filename}-template.yaml"
     abs_file_path = os.path.join(script_dir, rel_path)
 
     with open(abs_file_path) as f:
-        schemas = f.read() 
-    
-    num_threads = len(cores.split(','))
+        schemas = f.read()
 
     schemas = schemas.replace("<n>", str(num_threads))
     schemas = schemas.replace("<node_label>", node_label)
@@ -103,15 +105,15 @@ if __name__ == '__main__':
 
     args = parse_args()
 
-    if not args.no_setup:
-        subprocess.run(["gcloud", "auth", "application-default", "login"], check=True)
-        subprocess.run(["gcloud", "init"], check=True)
-        subprocess.run(["kops", "create", "-f", "part3.yaml"], env=env, check=True)
-        subprocess.run(["kops", "update", "cluster", "part3.k8s.local", "--yes", "--admin"], env=env, check=True)
-        subprocess.run(["kops", "validate", "cluster", "--wait", "10m"],  env=env, check=True)
-        subprocess.run(["kubectl", "get", "nodes", "-o", "wide"], env=env, check=True)
-    else: 
-        print("WORKS")
+    # if not args.no_setup:
+    #     subprocess.run(["gcloud", "auth", "application-default", "login"], check=True)
+    #     subprocess.run(["gcloud", "init"], check=True)
+    #     subprocess.run(["kops", "create", "-f", "part3.yaml"], env=env, check=True)
+    #     subprocess.run(["kops", "update", "cluster", "part3.k8s.local", "--yes", "--admin"], env=env, check=True)
+    #     subprocess.run(["kops", "validate", "cluster", "--wait", "10m"],  env=env, check=True)
+    #     subprocess.run(["kubectl", "get", "nodes", "-o", "wide"], env=env, check=True)
+    # else:
+    #     print("WORKS")
 
     current_time = datetime.now()
     formatted_time = current_time.strftime("%d-%m-%Y-%H-%M")    
@@ -132,12 +134,12 @@ if __name__ == '__main__':
     print("B: ", client_agent_b, client_agent_b_internal_ip)
     
     for job in jobs:
-        update_template(job, config[job][0], config[job][1])
-    update_template("memcached", config["memcached"][0], config["memcached"][1])
+        update_template(job, config[job][0], config[job][1], config[job][2])
+    update_template("memcached", config["memcached"][0], config["memcached"][1], config["memcached"][2])
 
     subprocess.run(["kubectl", "create", "-f", f"part3/memcached.yaml"], env=env, check=True)
-    subprocess.run(["kubectl", "expose", "pod", "some-memcached", "--name", "some-memcached-11211",
-                    "--type", "LoadBalancer", "--port", "11211", "--protocol", "TCP"], env=env, check=True)
+    # subprocess.run(["kubectl", "expose", "pod", "some-memcached", "--name", "some-memcached-11211",
+    #                 "--type", "LoadBalancer", "--port", "11211", "--protocol", "TCP"], env=env, check=True)
 
     output = subprocess.check_output(["kubectl", "get", "pods", "--selector=name=some-memcached", "-o", "wide"], env=env, text=True)
     while not is_pod_ready(output):
@@ -238,9 +240,11 @@ if __name__ == '__main__':
         subprocess.run(["gcloud", "compute", "scp", f"ubuntu@{client_measure}:~/memcache-perf-dynamic/results.txt", f"memcached_results_{formatted_time}.txt", "--zone", "europe-west1-b", 
                 "--ssh-key-file", "~/.ssh/cloud-computing"])
 
+        log_run_results(f"results-jobs-{i}.json", f"memcached_results_{formatted_time}.txt")
+
     # Make sure there are no witnesses
-    # subprocess.run(["kubectl", "delete", "jobs", "--all"])
-    # subprocess.run(["kubectl", "delete", "pods", "--all"])
+    subprocess.run(["kubectl", "delete", "jobs", "--all"])
+    subprocess.run(["kubectl", "delete", "pods", "--all"])
 
 
     # subprocess.run(["kops", "delete", "cluster", "--name", f"part3.k8s.local", "--yes"], check=True)
