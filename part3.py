@@ -15,6 +15,10 @@ threads = [1, 2, 4, 8]
 jobs = ["blackscholes", "canneal", "dedup", "ferret", "freqmine", "radix", "vips"] 
 
 nodes = ["node-a-2core", "node-b-2core", "node-c-4core", "node-d-4core"]
+# node-a-2core - e2-highmem-2 - 2 cpus, 16 gb
+# node-b-2core - n2-highcpu-2 - 2 cpus, 2 gb
+# node-c-4core - c3-highcpu-4 - 4 cpus, 8 gb
+# node-d-4core - n2-standard-4 - 4 cpus, 16 gb
 
 config = {
     "radix" : (nodes[0],"0", 8),

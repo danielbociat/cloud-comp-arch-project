@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime
 from collections import defaultdict
 
+
 env = os.environ.copy()
 
 env["PROJECT"] = "cca-eth-2025-group-008"
@@ -17,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-setup", action="store_true", default=False, help="Runs without the one time setup")
     return parser.parse_args()
 
+
 if __name__ == '__main__':
     args = parse_args()
 
@@ -24,8 +26,8 @@ if __name__ == '__main__':
         subprocess.run(["sudo", "usermod", "-a", "-G", "docker", "$(whoami)"])
         subprocess.run(["gcloud", "auth", "application-default", "login"], check=True)
         subprocess.run(["gcloud", "init"], check=True)
-        subprocess.run(["kops", "create", "-f", "part3.yaml"], env=env, check=True)
-        subprocess.run(["kops", "update", "cluster", "part3.k8s.local", "--yes", "--admin"], env=env, check=True)
+        subprocess.run(["kops", "create", "-f", "part4.yaml"], env=env, check=True)
+        subprocess.run(["kops", "update", "cluster", "part4.k8s.local", "--yes", "--admin"], env=env, check=True)
         subprocess.run(["kops", "validate", "cluster", "--wait", "10m"],  env=env, check=True)
 
     output = subprocess.check_output(["kubectl", "get", "nodes", "-o", "wide"], env=env, text=True)
