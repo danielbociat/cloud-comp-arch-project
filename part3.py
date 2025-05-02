@@ -17,14 +17,17 @@ jobs = ["blackscholes", "canneal", "dedup", "ferret", "freqmine", "radix", "vips
 nodes = ["node-a-2core", "node-b-2core", "node-c-4core", "node-d-4core"]
 
 config = {
-    "blackscholes" : (nodes[1],"0,1", 8),
-    "canneal" : (nodes[2],"0,1,2,3", 8),
+    "radix" : (nodes[0],"0", 8),
+    "memcached" : (nodes[0],"1", 1),
+
+    "blackscholes" : (nodes[1],"0,1", 2),
     "dedup" : (nodes[1],"0,1", 8),
-    "ferret" : (nodes[2],"0,1,2,3", 8),
-    "freqmine" : (nodes[3],"0,1,2,3", 8),
-    "vips" : (nodes[3],"0,1,2,3", 8),
-    "radix" : (nodes[3],"0,1,2,3", 8),
-    "memcached" : (nodes[0],"0", 1)
+    
+    "freqmine" : (nodes[2],"0,1,2,3", 8),
+    "vips" : (nodes[2],"0,1,2,3", 6),
+
+    "canneal" : (nodes[3],"0,1,2,3", 8),
+    "ferret" : (nodes[3],"0,1,2,3", 6),
 }
 
 NUM_RUNS = 1
@@ -105,14 +108,14 @@ if __name__ == '__main__':
 
     args = parse_args()
 
-    # if not args.no_setup:
-    #     subprocess.run(["gcloud", "auth", "application-default", "login"], check=True)
-    #     subprocess.run(["gcloud", "init"], check=True)
-    #     subprocess.run(["kops", "create", "-f", "part3.yaml"], env=env, check=True)
-    #     subprocess.run(["kops", "update", "cluster", "part3.k8s.local", "--yes", "--admin"], env=env, check=True)
-    #     subprocess.run(["kops", "validate", "cluster", "--wait", "10m"],  env=env, check=True)
-    #     subprocess.run(["kubectl", "get", "nodes", "-o", "wide"], env=env, check=True)
-    # else:
+    if not args.no_setup:
+        subprocess.run(["gcloud", "auth", "application-default", "login"], check=True)
+        subprocess.run(["gcloud", "init"], check=True)
+        subprocess.run(["kops", "create", "-f", "part3.yaml"], env=env, check=True)
+        subprocess.run(["kops", "update", "cluster", "part3.k8s.local", "--yes", "--admin"], env=env, check=True)
+        subprocess.run(["kops", "validate", "cluster", "--wait", "10m"],  env=env, check=True)
+        subprocess.run(["kubectl", "get", "nodes", "-o", "wide"], env=env, check=True)
+    # # else:
     #     print("WORKS")
 
     current_time = datetime.now()
@@ -137,9 +140,10 @@ if __name__ == '__main__':
         update_template(job, config[job][0], config[job][1], config[job][2])
     update_template("memcached", config["memcached"][0], config["memcached"][1], config["memcached"][2])
 
+
     subprocess.run(["kubectl", "create", "-f", f"part3/memcached.yaml"], env=env, check=True)
-    # subprocess.run(["kubectl", "expose", "pod", "some-memcached", "--name", "some-memcached-11211",
-    #                 "--type", "LoadBalancer", "--port", "11211", "--protocol", "TCP"], env=env, check=True)
+    subprocess.run(["kubectl", "expose", "pod", "some-memcached", "--name", "some-memcached-11211",
+                    "--type", "LoadBalancer", "--port", "11211", "--protocol", "TCP"], env=env, check=True)
 
     output = subprocess.check_output(["kubectl", "get", "pods", "--selector=name=some-memcached", "-o", "wide"], env=env, text=True)
     while not is_pod_ready(output):
@@ -208,12 +212,12 @@ if __name__ == '__main__':
             for job in jobs:
                 if job in completed_jobs: continue
 
-                if RUNNING_JOBS[config[job]] == "":
+                if RUNNING_JOBS[(config[job][0], config[job][1])] == "":
                     print("Scheduled: ", job)
                     subprocess.run(["kubectl", "create", "-f", f"part3/{job}.yaml"], env=env, check=True)
-                    RUNNING_JOBS[config[job]] = job
+                    RUNNING_JOBS[(config[job][0], config[job][1])] = job
                 else:
-                    running_job = RUNNING_JOBS[config[job]]
+                    running_job = RUNNING_JOBS[(config[job][0], config[job][1])]
                     result = subprocess.run(
                         ["kubectl", "get", "job", running_job, "-o", "jsonpath={.status.succeeded}"],
                         capture_output=True, text=True
@@ -227,15 +231,20 @@ if __name__ == '__main__':
 
                         print("Scheduled: ", job)
                         subprocess.run(["kubectl", "create", "-f", f"part3/{job}.yaml"], env=env, check=True)
-                        RUNNING_JOBS[config[job]] = job
+                        RUNNING_JOBS[(config[job][0], config[job][1])] = job
                     else:
+                        time.sleep(1)
                         continue
 
             if len(completed_jobs) == len(jobs): break
             
-        with open(f"results-jobs-{i}.json", "w") as outfile:
+        with open(f"results-jobs-{i}-{formatted_time}.json", "w") as outfile:
             subprocess.run(["kubectl", "get", "pods", "-o", "json"], env=env, stdout=outfile, check=True)
-        subprocess.run(["python3", "get_time.py", f"results-jobs-{i}.json"], check=True)
+        
+        with open(f"results-config-{formatted_time}.txt", "w") as outfile:
+            for job in jobs:
+                outfile.write(job, config[job])
+        subprocess.run(["python3", "get_time.py", f"results-jobs-{i}-{formatted_time}.json"], check=True)
    
         subprocess.run(["gcloud", "compute", "scp", f"ubuntu@{client_measure}:~/memcache-perf-dynamic/results.txt", f"memcached_results_{formatted_time}.txt", "--zone", "europe-west1-b", 
                 "--ssh-key-file", "~/.ssh/cloud-computing"])
@@ -245,6 +254,7 @@ if __name__ == '__main__':
     # Make sure there are no witnesses
     subprocess.run(["kubectl", "delete", "jobs", "--all"])
     subprocess.run(["kubectl", "delete", "pods", "--all"])
+    subprocess.run(["kubectl", "delete", "services", "some-memcached-11211"])
 
 
     # subprocess.run(["kops", "delete", "cluster", "--name", f"part3.k8s.local", "--yes"], check=True)
