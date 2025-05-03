@@ -187,7 +187,11 @@ if __name__ == '__main__':
     NUM_RUNS = 1
     for i in range(NUM_RUNS):
         for [T, C] in configs:
-            update_server_config(num_threads=T, num_cores=C, memcache_server=memcache_server)
+            update_server_config(num_threads=T,
+                                 num_cores=C,
+                                 memcache_server=memcache_server,
+                                 memcache_server_internal_ip = memcache_server_internal_ip
+                                 )
             print(f"\n\n\nStart mcperf in client Measure, server has {T} threads and {C} cores.\n\n")
             subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
                                   "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
