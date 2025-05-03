@@ -16,6 +16,24 @@ env["KOPS_STATE_STORE"] = "gs://cca-eth-2025-group-008-ccraciun"
 
 NUM_RUNS = 1
 
+def update_server_config(num_threads, num_cores, memcache_server, memcache_server_internal_ip):
+    # update server ip, memory, threads
+    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
+                    "--ssh-key-file", "~/.ssh/cloud-computing",
+                    "--command",
+                    f"chmod +x ~/update-memcached-server.sh && ~/update-memcached-server.sh {memcache_server_internal_ip} {num_threads}"])
+
+    # restart memcached server
+    print("restarting memcached server...")
+    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
+                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                    "chmod +x ~/restart-memcached-server.sh && ~/restart-memcached-server.sh"])
+
+    print("check memcached restarted")
+    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
+                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                    "chmod +x ~/check-memcached-server.sh && ~/check-memcached-server.sh"], check=True)
+
 
 def log_run_results(parsec_output, memcached_output):
     pass
@@ -33,18 +51,6 @@ def is_job_completed(kubectl_output):
 
     return completions == "1/1"
 
-
-def is_pod_ready(kubectl_output):
-    lines = kubectl_output.strip().splitlines()
-    if len(lines) < 2:
-        return False
-
-    pod_info = lines[1]
-    parts = pod_info.split()
-
-    readiness = parts[1]
-
-    return readiness == "1/1"
 
 
 def extract_times(output):
@@ -124,8 +130,9 @@ if __name__ == '__main__':
     print("Client agent: ", client_agent, client_agent_internal_ip)
 
     #upload scripts to the memcached server machine
-    scripts = ["install_memcached_part4_1.sh", "install-memcached-server.sh", "restart-memcached-server.sh", "update-memcached-server.sh"]
+    scripts = ["install_memcached_part4_1.sh", "check-memcached-server.sh", "restart-memcached-server.sh", "update-memcached-server.sh"]
     for script in scripts:
+        print(f"Uploading script {script} to the server.")
         subprocess.run(
             ["gcloud", "compute", "scp", f"part4/scripts/{script}", f"ubuntu@{memcache_server}:~/",
              "--zone", "europe-west1-b",
@@ -138,21 +145,14 @@ if __name__ == '__main__':
                     "chmod +x ~/install_memcached_part4_1.sh && ~/install_memcached_part4_1.sh"])
     print("Installed memcached in the server.")
 
-    subprocess.run(["part4.scripts/check_memcached-server.sh"], check=True)
-
-
-    #update server ip, memory, threads
-    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
-                    "--ssh-key-file", "~/.ssh/cloud-computing",
-                    "--command", "chmod +x ~/update-memcached-server.sh && ~/update-memcached-server.sh.sh"])
-
-    # restart memcached server
-    print("restarting memcached server...")
+    #check memcached started
+    print("check memcached started")
     subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
                     "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                    "chmod +x ~/restart-memcached-server.sh && ~/restart-memcached-server.sh.sh"])
+                    "chmod +x ~/check-memcached-server.sh && ~/check-memcached-server.sh"], check=True)
 
-    subprocess.run(["part4.scripts/check_memcached-server.sh"], check=True)
+
+
 
     # install mcperf in client measure and agent
     if not args.no_setup:
@@ -164,12 +164,12 @@ if __name__ == '__main__':
         subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_agent}", "--zone", "europe-west1-b",
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         "chmod +x ~/update_mcperf.sh && ~/update_mcperf.sh"])
-        print("Updated mcperf in client")
+        print("Updated mcperf in client agent")
 
     subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_agent}", "--zone", "europe-west1-b",
                       "--ssh-key-file", "~/.ssh/cloud-computing", "--quiet", "--command",
                       "cd memcache-perf-dynamic && ./mcperf -T 8 -A"], stdout=subprocess.DEVNULL)
-    print("Started mcperf in client")
+    print("Started mcperf in client agent")
 
     if not args.no_setup:
         subprocess.run(
@@ -182,23 +182,21 @@ if __name__ == '__main__':
                         "chmod +x ~/update_mcperf.sh && ~/update_mcperf.sh"])
         print("Updated mcperf in client Measure")
 
-    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
-                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                    f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
 
     configs = [[1,1], [1,2], [2,1], [2,2]] #[T, C]
     NUM_RUNS = 1
     for i in range(NUM_RUNS):
         for [T, C] in configs:
-            print(f"Start mcperf in client Measure with {T} threads and {C} cores.")
+            update_server_config(num_threads=T, num_cores=C, memcache_server=memcache_server)
+            print(f"\n\n\nStart mcperf in client Measure, server has {T} threads and {C} cores.\n\n")
             subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
                                   "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                                   f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
-                                 --noload -T {T} -C {C} -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
+                                 --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
                                   > part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
                               ],
                              stdout=subprocess.DEVNULL)
 
 
-    subprocess.run(["kops", "delete", "cluster", "--name", f"part3.k8s.local", "--yes"], check=True)
+    subprocess.run(["kops", "delete", "cluster", "--name", f"part4.k8s.local", "--yes"], check=True)
     print("Successfully deleted cluster!")
