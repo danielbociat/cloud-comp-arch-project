@@ -17,17 +17,13 @@ env["KOPS_STATE_STORE"] = "gs://cca-eth-2025-group-008-ccraciun"
 NUM_RUNS = 1
 
 def update_server_config(num_threads, num_cores, memcache_server, memcache_server_internal_ip):
-    # update server ip, memory, threads
+    # update server ip, memory, threads, cores
+    print("update and restart memcached server...")
     subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
                     "--ssh-key-file", "~/.ssh/cloud-computing",
                     "--command",
-                    f"chmod +x ~/update-memcached-server.sh && ~/update-memcached-server.sh {memcache_server_internal_ip} {num_threads}"])
+                    f"chmod +x ~/update-memcached-server.sh && ~/update-memcached-server.sh {memcache_server_internal_ip} {num_threads} {num_cores}"])
 
-    # restart memcached server
-    print("restarting memcached server...")
-    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
-                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                    "chmod +x ~/restart-memcached-server.sh && ~/restart-memcached-server.sh"])
 
     print("check memcached restarted")
     subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
@@ -129,8 +125,8 @@ if __name__ == '__main__':
 
     print("Client agent: ", client_agent, client_agent_internal_ip)
 
-    #upload scripts to the memcached server machine
-    scripts = ["install_memcached_part4_1.sh", "check-memcached-server.sh", "restart-memcached-server.sh", "update-memcached-server.sh"]
+    # upload scripts to the memcached server machine
+    scripts = ["install_memcached_part4_1.sh", "check-memcached-server.sh", "update-memcached-server.sh"]
     for script in scripts:
         print(f"Uploading script {script} to the server.")
         subprocess.run(
@@ -145,13 +141,11 @@ if __name__ == '__main__':
                     "chmod +x ~/install_memcached_part4_1.sh && ~/install_memcached_part4_1.sh"])
     print("Installed memcached in the server.")
 
-    #check memcached started
+    # check memcached started
     print("check memcached started")
     subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
                     "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                     "chmod +x ~/check-memcached-server.sh && ~/check-memcached-server.sh"], check=True)
-
-
 
 
     # install mcperf in client measure and agent
@@ -184,7 +178,7 @@ if __name__ == '__main__':
 
 
     configs = [[1,1], [1,2], [2,1], [2,2]] #[T, C]
-    NUM_RUNS = 1
+    NUM_RUNS = 3
     for i in range(NUM_RUNS):
         for [T, C] in configs:
             update_server_config(num_threads=T,
@@ -200,6 +194,13 @@ if __name__ == '__main__':
                                   > part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
                               ],
                              stdout=subprocess.DEVNULL)
+            # copy results locally
+            subprocess.run(
+                ["gcloud", "compute", "scp",
+                 f"ubuntu@{client_measure}:~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+                 f"part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+                 "--zone", "europe-west1-b",
+                 "--ssh-key-file", "~/.ssh/cloud-computing"])
 
 
     subprocess.run(["kops", "delete", "cluster", "--name", f"part4.k8s.local", "--yes"], check=True)
