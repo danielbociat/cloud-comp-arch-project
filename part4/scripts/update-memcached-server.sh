@@ -16,15 +16,33 @@ else
     echo "-t $2" | sudo tee -a /etc/memcached.conf > /dev/null
 fi
 
-# cores
+sudo systemctl restart memcached
+
+#check if restarted
+while true; do
+    # Check the status of memcached service
+    output=$(sudo systemctl status memcached)
+
+    # If memcached is active and running, exit the loop
+    if echo "$output" | grep -q "Active: active (running)"; then
+        echo "Memcached is running!"
+        break
+    fi
+
+    echo "Waiting for memcached to start..."
+    sleep 10
+done
+
+# update cores AFTER server restart
 cores=""
 if [[ $3 == 1 ]]; then
   cores="0"
 elif [[ $3 == 2 ]]; then
   cores="0-1"
 fi
+
 pid=$(sudo systemctl show --property MainPID --value memcached)
 sudo taskset -a -p --cpu-list $cores $pid
 
-#restart
-sudo systemctl restart memcached
+echo -n "Current CPU affinity for PID $pid: "
+sudo taskset -cp "$pid"

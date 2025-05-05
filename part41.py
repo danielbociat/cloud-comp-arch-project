@@ -9,12 +9,10 @@ from collections import defaultdict
 env = os.environ.copy()
 
 env["PROJECT"] = "cca-eth-2025-group-008"
-env["KOPS_STATE_STORE"] = "gs://cca-eth-2025-group-008-ccraciun"
+env["KOPS_STATE_STORE"] = "gs://cca-eth-2025-group-008-ccraciun/"
 
 
-
-
-NUM_RUNS = 1
+NUM_RUNS = 3
 
 def update_server_config(num_threads, num_cores, memcache_server, memcache_server_internal_ip):
     # update server ip, memory, threads, cores
@@ -23,71 +21,6 @@ def update_server_config(num_threads, num_cores, memcache_server, memcache_serve
                     "--ssh-key-file", "~/.ssh/cloud-computing",
                     "--command",
                     f"chmod +x ~/update-memcached-server.sh && ~/update-memcached-server.sh {memcache_server_internal_ip} {num_threads} {num_cores}"])
-
-
-    print("check memcached restarted")
-    subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
-                    "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                    "chmod +x ~/check-memcached-server.sh && ~/check-memcached-server.sh"], check=True)
-
-
-def log_run_results(parsec_output, memcached_output):
-    pass
-
-
-def is_job_completed(kubectl_output):
-    lines = kubectl_output.strip().splitlines()
-    if len(lines) < 2:
-        return False
-
-    job_info = lines[1]
-    parts = job_info.split()
-
-    completions = parts[2]
-
-    return completions == "1/1"
-
-
-
-def extract_times(output):
-    match = re.search(r"real\s+(\d+)m([\d.]+)s\s+user\s+(\d+)m([\d.]+)s\s+sys\s+(\d+)m([\d.]+)s", output)
-
-    real_time = int(match.group(1)) * 60 + float(match.group(2))
-    user_time = int(match.group(3)) * 60 + float(match.group(4))
-    sys_time = int(match.group(5)) * 60 + float(match.group(6))
-
-    print(f"Real time: {real_time} seconds")
-    print(f"User time: {user_time} seconds")
-    print(f"Sys time: {sys_time} seconds")
-
-    return real_time, user_time, sys_time
-
-
-def write_run_data(filename, no_threads, job_name, real_time, user_time, sys_time):
-    line = f"{no_threads},{job_name},{real_time},{user_time},{sys_time}\n"
-    with open(filename, "a") as f:
-        f.write(line)
-
-
-def update_template(filename, node_label, cores, num_threads):
-    script_dir = os.path.dirname(__file__)
-    rel_path = f"part3/{filename}-template.yaml"
-    abs_file_path = os.path.join(script_dir, rel_path)
-
-    with open(abs_file_path) as f:
-        schemas = f.read()
-
-    schemas = schemas.replace("<n>", str(num_threads))
-    schemas = schemas.replace("<node_label>", node_label)
-    schemas = schemas.replace("<cores>", cores)
-
-    script_dir = os.path.dirname(__file__)
-    rel_path = f"part3/{filename}.yaml"
-    abs_file_path = os.path.join(script_dir, rel_path)
-
-    with open(abs_file_path, "w") as f:
-        f.write(schemas)
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -178,23 +111,26 @@ if __name__ == '__main__':
 
 
     configs = [[1,1], [1,2], [2,1], [2,2]] #[T, C]
-    NUM_RUNS = 3
-    for i in range(NUM_RUNS):
-        for [T, C] in configs:
-            update_server_config(num_threads=T,
-                                 num_cores=C,
-                                 memcache_server=memcache_server,
-                                 memcache_server_internal_ip = memcache_server_internal_ip
-                                 )
-            print(f"\n\n\nStart mcperf in client Measure, server has {T} threads and {C} cores.\n\n")
-            subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
+    for [T, C] in configs:
+        update_server_config(num_threads=T,
+                             num_cores=C,
+                             memcache_server=memcache_server,
+                             memcache_server_internal_ip=memcache_server_internal_ip
+                             )
+        for i in range(NUM_RUNS):
+            print(f"\n\n\nStart run {i} for mcperf in client Measure, server has {T} threads and {C} cores.\n\n")
+            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
+                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                            f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
+            print("fire")
+            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
                                   "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                                   f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
                                  --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
-                                  > part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
-                              ],
-                             stdout=subprocess.DEVNULL)
+                                  > ~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
+                              ])
             # copy results locally
+            print("copy")
             subprocess.run(
                 ["gcloud", "compute", "scp",
                  f"ubuntu@{client_measure}:~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
