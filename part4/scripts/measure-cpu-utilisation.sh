@@ -22,7 +22,7 @@ while true; do
     # instantaneous CPU usage
     diff_total=$((total - prev_total))
     diff_idle=$((idle - prev_idle))
-    diff_used=$((100 * (diff_total - diff_idle)))
+    diff_used=$((diff_total - diff_idle))
     inst_cpu_usage=$(echo "scale=3; 100*$diff_used / $diff_total" | bc)
 
 
