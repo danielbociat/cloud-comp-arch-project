@@ -59,7 +59,7 @@ if __name__ == '__main__':
     print("Client agent: ", client_agent, client_agent_internal_ip)
 
     # upload scripts to the memcached server machine
-    scripts = ["install_memcached_part4_1.sh", "check-memcached-server.sh", "update-memcached-server.sh"]
+    scripts = ["install_memcached_part4_1.sh", "check-memcached-server.sh", "update-memcached-server.sh", "measure-cpu-utilisation.sh"]
     for script in scripts:
         print(f"Uploading script {script} to the server.")
         subprocess.run(
@@ -110,7 +110,38 @@ if __name__ == '__main__':
         print("Updated mcperf in client Measure")
 
 
-    configs = [[1,1], [1,2], [2,1], [2,2]] #[T, C]
+    # part a
+    # configs = [[1,1], [1,2], [2,1], [2,2]] #[T, C]
+    # for [T, C] in configs:
+    #     update_server_config(num_threads=T,
+    #                          num_cores=C,
+    #                          memcache_server=memcache_server,
+    #                          memcache_server_internal_ip=memcache_server_internal_ip
+    #                          )
+    #     for i in range(NUM_RUNS):
+    #         print(f"\n\n\nStart run {i} for mcperf in client Measure, server has {T} threads and {C} cores.\n\n")
+    #         subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
+    #                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+    #                         f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
+    #         print("fire")
+    #         subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
+    #                               "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+    #                               f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
+    #                              --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
+    #                               > ~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
+    #                           ])
+    #         # copy results locally
+    #         print("copy")
+    #         subprocess.run(
+    #             ["gcloud", "compute", "scp",
+    #              f"ubuntu@{client_measure}:~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+    #              f"part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+    #              "--zone", "europe-west1-b",
+    #              "--ssh-key-file", "~/.ssh/cloud-computing"])
+
+    #part d
+    configs = [[2, 1], [2, 2]]  # [T, C]
+    NUM_RUNS = 1
     for [T, C] in configs:
         update_server_config(num_threads=T,
                              num_cores=C,
@@ -122,21 +153,47 @@ if __name__ == '__main__':
             subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
                             "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                             f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
+
+            print("start measuring the CPU utilisation on the memcached server")
+            cpu_log_remote = f"cpu-utilisation-{T}threads-{C}cpu-run{i}-{formatted_time}.txt"
+            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
+                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                            f"nohup bash -c 'chmod +x ~/measure-cpu-utilisation.sh && ~/measure-cpu-utilisation.sh {cpu_log_remote}' > /dev/null 2>&1 < /dev/null &"
+                            ], stdout=subprocess.PIPE)
+
             print("fire")
+            time.sleep(3)
+
             subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
-                                  "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                                  f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
-                                 --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
+                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                            f"cd memcache-perf-dynamic \
+                                    && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
+                                    --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 5 --scan 5000:220000:5000 \
                                   > ~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt"
-                              ])
+                            ])
             # copy results locally
-            print("copy")
+            print("copy qps")
             subprocess.run(
                 ["gcloud", "compute", "scp",
                  f"ubuntu@{client_measure}:~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
-                 f"part4/results/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+                 f"part4/results/d/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
                  "--zone", "europe-west1-b",
                  "--ssh-key-file", "~/.ssh/cloud-computing"])
+
+            print("copy CPU usage")
+            subprocess.run(
+                ["gcloud", "compute", "scp",
+                 f"ubuntu@{memcache_server}:~/{cpu_log_remote}",
+                 f"part4/results/d/{cpu_log_remote}",
+                 "--zone", "europe-west1-b",
+                 "--ssh-key-file", "~/.ssh/cloud-computing"])
+
+            print("Delete CPU measuring script...")
+
+            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
+                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                            f"pkill -f measure-cpu-utilisation.sh"
+                            ])
 
 
     subprocess.run(["kops", "delete", "cluster", "--name", f"part4.k8s.local", "--yes"], check=True)
