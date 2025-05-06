@@ -206,8 +206,6 @@ def plot_41a(results: dict):
 
 def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
     for threads, cores in mcperf_results:
-        #plt.figure(figsize=(14, 8))
-
         qps, p95, _, _ = mcperf_results[(threads, cores)].get_plot_values()
         cpu_usage = cpu_usage_results[(threads, cores)]["cpu_usage"]
 
@@ -233,17 +231,12 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
 
         ax1.grid(True, which='both', axis='both')
 
-        # Set a combined legend on ax1 (or use fig.legend if you want it outside)
         handles = [line1, slo_line, line2]
         labels = [h.get_label() for h in handles]
         ax1.legend(handles, labels, loc='upper left')
 
-
-        # Optional: Add a title and legends
         plt.xlim(0, 230000)
         plt.title(f"p95 and CPU Usage Versus QPS\n{threads} threads, {cores} cores")
-        # plt.grid(True)
-        # plt.legend()
         fig.tight_layout()  # To prevent label cutoff
 
         #plt.show()
@@ -253,14 +246,9 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
 def main():
     # results = parse_mcperf_output(MCPERF_OUTPUT_1A_PATH)
     # plot_41a(results)
-    # cpu_data = parse_cpu_util_output(CPU_UTIL_OUTPUT_1D_PATH)
-    # print(cpu_data)
-    # intervals = parse_mcperf_timestamps()
-
     mcperf_results = parse_mcperf_output(DATA_OUTPUT_1D_PATH)
     cpu_usage_results = get_cpu_usage(DATA_OUTPUT_1D_PATH)
     plot_41d(mcperf_results, cpu_usage_results)
-    # print(results)
 
 
 if __name__ == "__main__":
