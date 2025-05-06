@@ -162,7 +162,6 @@ if __name__ == '__main__':
                             ], stdout=subprocess.PIPE)
 
             print("fire")
-            time.sleep(3)
 
             subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
                             "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
