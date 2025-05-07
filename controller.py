@@ -1,10 +1,11 @@
 import docker
 import psutil
-
+import time
 
 class Controller:
     def __init__(self):
         self.docker_client = docker.from_env()
+        self.finished = list()
         self.container_info = {
             "blackscholes": {
                 "image": "anakli/cca:parsec_blackscholes",
@@ -93,6 +94,8 @@ class Controller:
 
     def schedule(self):
         # start jobs
+        for i in range(100):
+            print(i)
         for job_name in self.container_info.keys():
             self.start_container(
                 self.container_info[job_name]["image"],
@@ -100,10 +103,16 @@ class Controller:
                 self.container_info[job_name]["cpuset_cpus"],
                 self.container_info[job_name]["num_threads"]
             )
-        
+        for i in range(101, 200):
+            print(i)
+
         # scheduling loop
         usage = self.get_memcached_resource_usage()
-        
+        while True:
+            time.sleep(1)
+            print("looping")
+        print("done looping")
+
 
 
 def main():
@@ -112,4 +121,6 @@ def main():
 
 
 if __name__ == "__main__":
+    print("entering main controller...")
     main()
+    print("exited main controller..")
