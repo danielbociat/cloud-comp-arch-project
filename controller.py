@@ -8,7 +8,7 @@ import subprocess
 import time
 
 
-MEMCACHED_PROCESS = "daemon"
+MEMCACHED_PROCESS = "memcached"
 
 
 class Controller:
