@@ -4,7 +4,8 @@ import pathlib
 
 import docker
 import psutil
-
+import subprocess
+import time
 
 class Controller:
     def __init__(self, mcperf_output_path: pathlib.Path):
@@ -62,6 +63,32 @@ class Controller:
             }
         }
 
+    def _get_main_pid(self, service_name):
+        try:
+            result = subprocess.run(
+                ['systemctl', 'show', '--property', 'MainPID', '--value', service_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True
+            )
+            print(f"{service_name} PID: {result}")
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to get PID for {service_name}: {e.stderr}")
+            return None
+
+    def _set_cpu_affinity(self, pid, cpu_list):
+        try:
+            subprocess.run(
+                ['taskset', '-a', '-p', f'--cpu-list', cpu_list, pid],
+                check=True
+            )
+            print(f"Set CPU affinity of PID {pid} to {cpu_list}")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to set CPU affinity: {e}")
+            return None
+
     #TODO implement
     def get_latest_p95_latency(self):
         p95 = None
@@ -70,21 +97,46 @@ class Controller:
             split = lines[-1].split()
             p95 = float(split[12])
         return p95
-    
+
     def expand_memcached_to_2_cores(self):
-        pass
+        pid = self._get_main_pid("memcached")
+        if pid and pid != "0":
+            self._set_cpu_affinity(pid, "0-1")
+        else:
+            print(f"bad pid {pid}")
     def constrain_memcached_to_1_core(self):
-        pass
+        pid = self._get_main_pid("memcached")
+        if pid and pid != "0":
+            self._set_cpu_affinity(pid, "0")
+        else:
+            print(f"bad pid {pid}")
     def get_containers_on_core(self, core):
-        return list()
+        result = list()
+        for key, value in self.container_info:
+            if core in value.obj.attrs['HostConfig'].get('CpusetCpus', ''):
+                print(value.obj.attrs['HostConfig'].get('CpusetCpus', ''))
+                result.append(key)
+        return result
 
     # should only include running containers
     def get_containers_on_corei_not_corej(self, core1, core2):
-        return list()
+        result = list()
+        for key, value in self.container_info:
+            if core1 in value.obj.attrs['HostConfig'].get('CpusetCpus', '') and not core2 in value.obj.attrs['HostConfig'].get('CpusetCpus', ''):
+                print(value.obj.attrs['HostConfig'].get('CpusetCpus', ''))
+                result.append(key)
+        return result
 
     # should update self.finished
     def gather_finished_container(self):
-        pass
+        result = list()
+        for container in self.docker_client.list(status="excited"):
+            result.append(container.name)
+        for container in self.docker_client.list(status=""):
+            print(container.logs())
+            return Exception(f"Container {container.name} failed")
+        self.finised = result
+
 
     # should first check for pause jobs on the core
     # should do nothing if everything is scheduled or finished
@@ -92,8 +144,10 @@ class Controller:
         pass
 
     def add_core(self, container, core):
-        pass
-
+        new_cores = self.docker_client.list(name=container).attrs['HostConfig'].get('CpusetCpus', '')
+        if core not in new_cores:
+            new_cores = f"cores,core"
+        self.docker_client.list(name=container).update(cpuset_cpus=f"{new_cores}")
 
 
     def get_memcached_resource_usage(self) -> dict:
