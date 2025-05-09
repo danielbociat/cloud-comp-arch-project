@@ -1,12 +1,17 @@
+import sys
+import time
+import pathlib
+
 import docker
 import psutil
-import time
+
 
 class Controller:
-    def __init__(self):
+    def __init__(self, mcperf_output_path: pathlib.Path):
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
+        self.mcperf_output_path = mcperf_output_path
         # TODO add thresholds
         self.T1_qps = 0
         self.T2_qps = 0
@@ -59,7 +64,13 @@ class Controller:
 
     #TODO implement
     def get_latest_p95_latency(self):
-        return 0.5
+        p95 = None
+        with open(self.mcperf_output_path) as f:
+            lines = f.readlines()
+            split = lines[-1].split()
+            p95 = float(split[12])
+        return p95
+    
     def expand_memcached_to_2_cores(self):
         pass
     def constrain_memcached_to_1_core(self):
@@ -216,8 +227,9 @@ class Controller:
 
 
 def main():
-    c = Controller()
-    c.schedule()
+    mcperf_output_path = pathlib.Path(sys.argv[1])
+    c = Controller(mcperf_output_path)
+    #c.schedule()
 
 
 if __name__ == "__main__":

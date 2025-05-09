@@ -111,12 +111,21 @@ def parse_cpu_util_output(data_file_path: Path) -> list:
     # [(ts, cpu)]
     data = []
     with open(data_file_path) as csv_file:
+        split = data_file_path.split("-")
+        num_cpus = int(split[3][0])
         reader = csv.reader(csv_file, delimiter=',')
         for row in reader:
             # print(row)
-            if "Time" not in row[0]:
+            if "time" not in row[0]:
+                total_cpu = float(row[1])
+                if total_cpu < 1.0:
+                    continue
+
                 ts = int(row[0])
-                cpu = float(row[1]) / 25.0
+                if num_cpus == 1:   
+                    cpu = float(row[2])
+                elif num_cpus == 2:
+                    cpu = float(row[2]) + float(row[3])
                 # data["times"].append(ts)
                 # data["cpu"].append(cpu)
                 data.append((ts, cpu))
@@ -150,30 +159,52 @@ def get_cpu_usage(data_path: Path) -> dict:
         if split[0] == "cpu":
             num_threads = int(split[2][0])
             num_cores = int(split[3][0])
+            num_run = int(split[4][-1])
             parsed_cpu_util = parse_cpu_util_output(file_path)
 
             if (num_threads, num_cores) not in results:
                 results[(num_threads, num_cores)] = {}
-            results[(num_threads, num_cores)]["cpu_util_timestamps"] = parsed_cpu_util
+            if num_run not in results[(num_threads, num_cores)]:
+                results[(num_threads, num_cores)][num_run] = {}
+            results[(num_threads, num_cores)][num_run]["cpu_util_timestamps"] = parsed_cpu_util
         else:
             num_threads = int(split[2][-1])
             num_cores = int(split[3][-1])
             parsed_timestamps = parse_mcperf_timestamps(file_path)
+            num_run = int(split[4][-1])
 
             if (num_threads, num_cores) not in results:
                 results[(num_threads, num_cores)] = {}
-            results[(num_threads, num_cores)]["mcperf_timestamps"] = parsed_timestamps
+            if num_run not in results[(num_threads, num_cores)]:
+                results[(num_threads, num_cores)][num_run] = {}
 
+            results[(num_threads, num_cores)][num_run]["mcperf_timestamps"] = parsed_timestamps
 
     # match cpu usage timestamps with mcperf load intervals
     for key in results:
-        cpu_usages = []
-        for ts_start, ts_end in results[key]["mcperf_timestamps"]:
-            for ts, cpu in results[key]["cpu_util_timestamps"]:
-                if ts >= ts_start and ts <= ts_end:
-                    cpu_usages.append(cpu)
+        cpu_usages = [[] for _ in range(NUM_RUNS)]
+        for num_run in results[key]:
+            idx = 0
+            for ts_start, ts_end in results[key][num_run]["mcperf_timestamps"]:
+                for ts, cpu in results[key][num_run]["cpu_util_timestamps"]:
+                    if ts >= ts_start and ts <= ts_end:
+                        if num_run > 0 and len(cpu_usages[num_run]) >= len(cpu_usages[num_run - 1]):
+                            break 
+                        if len(cpu_usages[num_run]) <= idx:
+                            cpu_usages[num_run].append(cpu)
+                        else:
+                            if cpu > cpu_usages[num_run][idx]:
+                                cpu_usages[num_run][idx] = cpu
+                idx += 1
+                        
 
-        results[key]["cpu_usage"] = cpu_usages
+        # compute average 
+        cpu_usage_averages = [0 for _ in range(len(cpu_usages[0]))]
+        for i in range(len(cpu_usages[0])):
+            for num_run in range(NUM_RUNS):
+                cpu_usage_averages[i] += cpu_usages[num_run][i]
+        cpu_usage_averages = [val / NUM_RUNS for val in cpu_usage_averages]
+        results[key]["cpu_usage"] = cpu_usage_averages
 
     return results
 
@@ -205,6 +236,7 @@ def plot_41a(results: dict):
 
 
 def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
+    print(mcperf_results)
     for threads, cores in mcperf_results:
         qps, p95, _, _ = mcperf_results[(threads, cores)].get_plot_values()
         cpu_usage = cpu_usage_results[(threads, cores)]["cpu_usage"]
