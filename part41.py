@@ -211,7 +211,7 @@ if __name__ == '__main__':
             print("Loading memcached")
 
             print("update server")
-            update_server_config(num_threads=4,
+            update_server_config(num_threads=2,
                                  num_cores=2,
                                  memcache_server=memcache_server,
                                  memcache_server_internal_ip=memcache_server_internal_ip
@@ -233,9 +233,10 @@ if __name__ == '__main__':
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         f"bash -c 'sudo apt-get install python3-pip && \
                         pip install --break-system-packages -r requirements.txt && \
+                        sudo groupadd docker && \
                         sudo usermod -aG docker $USER && \
                           sudo apt install -y docker.io && \
-                          python3 -u controller.py --qps-file ~/results-part4.2-{formatted_time}.txt'"])
+                          python3 -u controller.py'"])
         print("Installed controller requirements and started controller")
 
 

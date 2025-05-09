@@ -12,14 +12,15 @@ MEMCACHED_PROCESS = "memcached"
 
 
 class Controller:
-    def __init__(self, mcperf_output_path: pathlib.Path):
+    def __init__(self):
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
-        self.mcperf_output_path = mcperf_output_path
+        self.memcached_num_cores = 1
         # TODO add thresholds
-        self.T1_qps = 0.4
-        self.T2_qps = 0.6
+        self.T_mcd_1core = 25
+        self.T_mcd_2core_low = 40
+        self.T_mcd_2core_high = 150
         self.T1_cpu = 50
         self.T2_cpu = 80
         self.container_info = {
@@ -96,17 +97,10 @@ class Controller:
             return None
 
 
-    def get_latest_p95_latency(self):
-        p95 = None
-        with open(self.mcperf_output_path) as f:
-            lines = f.readlines()
-            split = lines[-1].split()
-            p95 = float(split[12])
-        return p95
-
 
     def expand_memcached_to_2_cores(self):
         pid = self._get_main_pid(MEMCACHED_PROCESS)
+        self.memcached_num_cores = 2
         if pid and pid != "0":
             self._set_cpu_affinity(pid, "0-1")
         else:
@@ -115,6 +109,7 @@ class Controller:
 
     def constrain_memcached_to_1_core(self):
         pid = self._get_main_pid(MEMCACHED_PROCESS)
+        self.memcached_num_cores = 1
         if pid and pid != "0":
             self._set_cpu_affinity(pid, "0")
         else:
@@ -225,14 +220,12 @@ class Controller:
         self.create_all_containers()
 
         while len(self.finished) < 7:
-            memcached_latency = self.get_latest_p95_latency()
-
-            if memcached_latency < self.T1_qps: # small latency, 1 core works
+            mcd_cpu = self.get_memcached_cpu()
+            if self.memcached_num_cores == 1 and mcd_cpu > self.T_mcd_1core:
+                self.expand_memcached_to_2_cores()
+            elif self.memcached_num_cores == 2 and mcd_cpu < self.T_mcd_2core_low:
                 self.constrain_memcached_to_1_core()
-            elif memcached_latency < self.T2_qps: # medium latency, use 2 cores for safety
-                self.expand_memcached_to_2_cores()
-            else:   # high latency, use 2 cores and pause everything on the second core
-                self.expand_memcached_to_2_cores()
+            elif self.memcached_num_cores == 2 and mcd_cpu > self.T_mcd_2core_high: # very high latency, use 2 cores and pause everything on the second core
                 containers_core_1 = self.get_containers_on_core(1)
                 for container in containers_core_1:
                     self.pause_container(container)
@@ -305,8 +298,7 @@ class Controller:
 
 
 def main():
-    mcperf_output_path = pathlib.Path(sys.argv[1])
-    c = Controller(mcperf_output_path)
+    c = Controller()
     # c.create_all_containers()
     # c.schedule_next_job('0')
     # # c.start_all_containers()
