@@ -8,6 +8,8 @@ import psutil
 import subprocess
 import time
 
+import scheduler_logger
+
 
 MEMCACHED_PROCESS = "memcached"
 
@@ -25,6 +27,7 @@ class Controller:
         self.T1_cpu = 50
         self.T2_cpu = 80
         self.output_file = output_file
+        self.logger = scheduler_logger.SchedulerLogger()
         self.container_info = {
             "blackscholes": {
                 "image": "anakli/cca:parsec_blackscholes",
@@ -69,6 +72,28 @@ class Controller:
                 "num_threads": 2                
             }
         }
+
+    def get_job_from_container_name(self, container_name: str):
+        match container_name:
+            case "scheduler":
+                return scheduler_logger.job.SCHEDULER
+            case "memcached":
+                return scheduler_logger.job.MEMCACHED
+            case "blackscholes":
+                return scheduler_logger.job.BLACKSCHOLES
+            case "canneal":
+                return scheduler_logger.job.CANNEAL
+            case "dedup":
+                return scheduler_logger.job.DEDUP
+            case "ferret":
+                return scheduler_logger.job.FERRET
+            case "freqmine":
+                return scheduler_logger.job.FREQMINE
+            case "radix":
+                return scheduler_logger.job.RADIX
+            case "vips":
+                return scheduler_logger.job.VIPS
+
 
 
     def pull_images(self):
@@ -169,6 +194,7 @@ class Controller:
             if container.status == "created":
                 container.update(cpuset_cpus=core)
                 container.start()
+                self.logger.job_start(self.get_job_from_container_name(container.name), core.split(","), self.container_info[container.name]["num_threads"])
                 print(f"starting container: {container.name}")
                 return
             
@@ -177,6 +203,7 @@ class Controller:
         new_cores = self.docker_client.containers.get(container).attrs['HostConfig'].get('CpusetCpus', '')
         if str(core) not in new_cores:
             new_cores = f"{new_cores},{core}"
+            self.logger.update_cores(self, self.get_job_from_container_name(container), new_cores.split(","))
         self.docker_client.containers.get(container).update(cpuset_cpus=f"{new_cores}")
 
 
@@ -226,6 +253,7 @@ class Controller:
 
     def pause_container(self, job_name: str):
         print(f"pausing container: {job_name}")
+        self.logger.job_pause(self.get_job_from_container_name(job_name))
         self.docker_client.containers.get(job_name).pause()
 
 
@@ -235,6 +263,7 @@ class Controller:
 
     
     def unpause_container(self, job_name: str):
+        self.logger.job_unpause(self.get_job_from_container_name(job_name))
         self.docker_client.containers.get(job_name).unpause()
 
     def get_container_runtimes(self, output_file):
@@ -259,6 +288,7 @@ class Controller:
         self.pull_images()
         start_time = time.time()
         self.create_all_containers()
+        self.logger.job_start(self.get_job_from_container_name("memcached"), ["0"], 2)
 
         while len(self.finished) < 7:
             time.sleep(1)
@@ -298,7 +328,7 @@ class Controller:
             else: # high utilisation, add other cores for containers or pause something
                 if cpu_utilisation[3] < self.T1_cpu: # add core 3 for some container running on core 2
                     conts = self.get_containers_on_corei_not_corej(2, 3)
-                    if len(conts) != 0: 
+                    if len(conts) != 0:
                         self.add_core(conts[0], 3)
                     else: # TODO: logic
                         pass
@@ -348,6 +378,8 @@ class Controller:
         print(f"schedule loop took {end_time - start_time} seconds")
         self.get_container_runtimes(self.output_file)
         time.sleep(60)
+        self.logger.job_end(self.get_job_from_container_name("memcached"))
+        self.logger.end()
 
 
 
