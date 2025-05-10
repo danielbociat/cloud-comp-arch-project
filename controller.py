@@ -1,12 +1,8 @@
-import sys
 import time
-import pathlib
-from datetime import datetime
+import subprocess
 
 import docker
 import psutil
-import subprocess
-import time
 
 import scheduler_logger
 
@@ -15,85 +11,80 @@ MEMCACHED_PROCESS = "memcached"
 
 
 class Controller:
-    def __init__(self, output_file: str):
+    def __init__(self):
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
         self.memcached_num_cores = 1
-        # TODO add thresholds
+        
+        # thresholds
         self.T_mcd_1core = 25
         self.T_mcd_2core_low = 40
         self.T_mcd_2core_high = 150
         self.T1_cpu = 50
         self.T2_cpu = 80
-        self.output_file = output_file
+
         self.logger = scheduler_logger.SchedulerLogger()
+
         self.container_info = {
             "blackscholes": {
                 "image": "anakli/cca:parsec_blackscholes",
-                "obj": None,
                 "cpuset_cpus": "0,1,2",
                 "num_threads": 2
             },
             "canneal": {
                 "image": "anakli/cca:parsec_canneal",
-                "obj": None,
                 "cpuset_cpus": "0",
                 "num_threads": 2                
             },
             "dedup": {
                 "image": "anakli/cca:parsec_dedup",
-                "obj": None,
                 "cpuset_cpus": "1",
                 "num_threads": 2
             },
             "ferret": {
                 "image": "anakli/cca:parsec_ferret",
-                "obj": None,
                 "cpuset_cpus": "0",
                 "num_threads": 2                
             },
             "freqmine": {
                 "image": "anakli/cca:parsec_freqmine",
-                "obj": None,
                 "cpuset_cpus": "0",
                 "num_threads": 2
             },
             "radix": {
                 "image": "anakli/cca:splash2x_radix",
-                "obj": None,
                 "cpuset_cpus": "0",
                 "num_threads": 2
             },
             "vips": {
                 "image": "anakli/cca:parsec_vips",
-                "obj": None,
                 "cpuset_cpus": "0",
                 "num_threads": 2                
             }
         }
 
+
     def get_job_from_container_name(self, container_name: str):
         match container_name:
             case "scheduler":
-                return scheduler_logger.job.SCHEDULER
+                return scheduler_logger.Job.SCHEDULER
             case "memcached":
-                return scheduler_logger.job.MEMCACHED
+                return scheduler_logger.Job.MEMCACHED
             case "blackscholes":
-                return scheduler_logger.job.BLACKSCHOLES
+                return scheduler_logger.Job.BLACKSCHOLES
             case "canneal":
-                return scheduler_logger.job.CANNEAL
+                return scheduler_logger.Job.CANNEAL
             case "dedup":
-                return scheduler_logger.job.DEDUP
+                return scheduler_logger.Job.DEDUP
             case "ferret":
-                return scheduler_logger.job.FERRET
+                return scheduler_logger.Job.FERRET
             case "freqmine":
-                return scheduler_logger.job.FREQMINE
+                return scheduler_logger.Job.FREQMINE
             case "radix":
-                return scheduler_logger.job.RADIX
+                return scheduler_logger.Job.RADIX
             case "vips":
-                return scheduler_logger.job.VIPS
-
+                return scheduler_logger.Job.VIPS
 
 
     def pull_images(self):
@@ -128,7 +119,6 @@ class Controller:
         except subprocess.CalledProcessError as e:
             print(f"Failed to set CPU affinity: {e}")
             return None
-
 
 
     def expand_memcached_to_2_cores(self):
@@ -232,7 +222,6 @@ class Controller:
                 detach=True
             )
             print("Container created, name:", container.name)
-            self.container_info[job_name]["obj"] = container
         except docker.errors.APIError as e:
             print("Docker error:", e.explanation)
 
@@ -266,22 +255,31 @@ class Controller:
         self.logger.job_unpause(self.get_job_from_container_name(job_name))
         self.docker_client.containers.get(job_name).unpause()
 
-    def get_container_runtimes(self, output_file):
-        durations = dict()
-        for container_name in self.container_info.keys():
-            started_at = self.docker_client.containers.get(container_name).attrs['State']['StartedAt']
-            finished_at = self.docker_client.containers.get(container_name).attrs['State']['FinishedAt']
 
-            started_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-            finished_dt = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
+    def basic_sequential_schedule(self):
+        self.pull_images()
+        start_time = time.time()
+        self.create_all_containers()
 
-            # Calculate duration
-            duration = finished_dt - started_dt
-            durations[container_name] = duration
-        with open(output_file, "w") as f:
-            f.write("{container_name},{duration")
-            for container_name in self.container_info:
-                f.write(f"{container_name},{durations[container_name]}")
+        for job_name in self.container_info:
+            container = self.docker_client.containers.get(job_name)           
+            container.update(cpuset_cpus="1,2,3")
+            container.start()
+            
+            print(f"started container for job: {job_name}")
+
+            is_running = True
+            while is_running:
+                status = self.docker_client.containers.get(job_name).status
+                if status == "exited":
+                    is_running = False
+                    print(f"job {job_name} finished")
+                time.sleep(1)
+
+        end_time = time.time()
+        print(f"took {end_time - start_time} seconds")
+        self.logger.end()
+        time.sleep(60)
 
 
     def schedule(self):
@@ -376,17 +374,13 @@ class Controller:
         print("done looping")
         end_time = time.time()
         print(f"schedule loop took {end_time - start_time} seconds")
-        self.get_container_runtimes(self.output_file)
         time.sleep(60)
         self.logger.job_end(self.get_job_from_container_name("memcached"))
         self.logger.end()
 
 
-
-
 def main():
-    output_file = sys.argv[1]
-    c = Controller(output_file)
+    c = Controller()
     # c.create_all_containers()
     # c.schedule_next_job('0')
     # # c.start_all_containers()
@@ -400,7 +394,8 @@ def main():
     # print(f"finished {c.finished}")
     # u = c.get_memcached_resource_usage()
     # print(u)
-    c.schedule()
+    #c.schedule()
+    c.basic_sequential_schedule()
 
 
 if __name__ == "__main__":
