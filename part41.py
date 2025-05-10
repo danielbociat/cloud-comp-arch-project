@@ -28,6 +28,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--subpart", required=True , default=None, help="Choose: 1a, 1d, 2, 3")
     return parser.parse_args()
 
+def get_container_runtimes(memcache_server, file):
+    print("copy runtime results locally")
+    subprocess.run(
+        ["gcloud", "compute", "scp",
+         f"ubuntu@{memcache_server}:~/{file}",
+         f"part4/results/2a/{file}",
+         "--zone", "europe-west1-b",
+         "--ssh-key-file", "~/.ssh/cloud-computing"])
+
 
 if __name__ == '__main__':
 
@@ -229,15 +238,17 @@ if __name__ == '__main__':
                             ])
 
         print("Start the controller...")
+        container_runtime_file = f"container-runtime-{formatted_time}"
         subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         f"bash -c 'sudo apt-get install python3-pip && \
-                        pip install --break-system-packages -r requirements.txt && \
+                        sudo pip install --break-system-packages -r requirements.txt && \
                         sudo groupadd docker && \
                         sudo usermod -aG docker $USER && \
                           sudo apt install -y docker.io && \
-                          python3 -u controller.py'"])
-        print("Installed controller requirements and started controller")
+                          sudo python3 -u controller.py {container_runtime_file}'"])
+
+        get_container_runtimes(memcache_server, container_runtime_file)
 
 
         print("copy qps results locally")

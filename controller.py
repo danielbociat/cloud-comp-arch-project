@@ -1,6 +1,7 @@
 import sys
 import time
 import pathlib
+from datetime import datetime
 
 import docker
 import psutil
@@ -12,7 +13,7 @@ MEMCACHED_PROCESS = "memcached"
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self, output_file: str):
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
@@ -23,6 +24,7 @@ class Controller:
         self.T_mcd_2core_high = 150
         self.T1_cpu = 50
         self.T2_cpu = 80
+        self.output_file = output_file
         self.container_info = {
             "blackscholes": {
                 "image": "anakli/cca:parsec_blackscholes",
@@ -233,7 +235,24 @@ class Controller:
 
     
     def unpause_container(self, job_name: str):
-        self.docker_client.containers.get(job_name).unpause()        
+        self.docker_client.containers.get(job_name).unpause()
+
+    def get_container_runtimes(self, output_file):
+        durations = dict()
+        for container_name in self.container_info.keys():
+            started_at = self.docker_client.containers.get(container_name).attrs['State']['StartedAt']
+            finished_at = self.docker_client.containers.get(container_name).attrs['State']['FinishedAt']
+
+            started_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+            finished_dt = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
+
+            # Calculate duration
+            duration = finished_dt - started_dt
+            durations[container_name] = duration
+        with open(output_file, "w") as f:
+            f.write("{container_name},{duration")
+            for container_name in self.container_info:
+                f.write(f"{container_name},{durations[container_name]}")
 
 
     def schedule(self):
@@ -327,12 +346,15 @@ class Controller:
         print("done looping")
         end_time = time.time()
         print(f"schedule loop took {end_time - start_time} seconds")
+        self.get_container_runtimes(self.output_file)
         time.sleep(60)
 
 
 
+
 def main():
-    c = Controller()
+    output_file = sys.argv[1]
+    c = Controller(output_file)
     # c.create_all_containers()
     # c.schedule_next_job('0')
     # # c.start_all_containers()
