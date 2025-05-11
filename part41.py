@@ -213,6 +213,11 @@ if __name__ == '__main__':
             print("Uploaded controller script to memcached server")
 
             subprocess.run(
+                ["gcloud", "compute", "scp", "scheduler_logger.py", f"ubuntu@{memcache_server}:~/", "--zone", "europe-west1-b",
+                 "--ssh-key-file", "~/.ssh/cloud-computing"])
+            print("Uploaded scheduler_logger script to memcached server")
+
+            subprocess.run(
                 ["gcloud", "compute", "scp", "requirements.txt", f"ubuntu@{memcache_server}:~/", "--zone", "europe-west1-b",
                  "--ssh-key-file", "~/.ssh/cloud-computing"])
             print("Uploaded requirements.txt to memcached server")
