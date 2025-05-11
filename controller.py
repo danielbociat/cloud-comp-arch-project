@@ -213,10 +213,14 @@ class Controller:
 
         
     def create_container(self, image: str, job_name: str, cpuset_cpus: str, num_threads: int):
+        command = ["./run", "-a", "run", "-S", "parsec", "-p", job_name, "-i", "native", "-n", str(num_threads)]
+        if job_name == "radix":
+            command[4] = "splash2x"
+
         try:
             container = self.docker_client.containers.create(
                 image,
-                command=["./run", "-a", "run", "-S", "parsec", "-p", job_name, "-i", "native", "-n", str(num_threads)],
+                command=command,
                 name=job_name,
                 cpuset_cpus=cpuset_cpus,
                 detach=True
@@ -265,6 +269,7 @@ class Controller:
             container = self.docker_client.containers.get(job_name)           
             container.update(cpuset_cpus="1,2,3")
             container.start()
+            self.logger.job_start(self.get_job_from_container_name(job_name), ["1", "2", "3"], 2)
             
             print(f"started container for job: {job_name}")
 
@@ -274,6 +279,7 @@ class Controller:
                 if status == "exited":
                     is_running = False
                     print(f"job {job_name} finished")
+                    self.logger.job_end(self.get_job_from_container_name(job_name))
                 time.sleep(1)
 
         end_time = time.time()
