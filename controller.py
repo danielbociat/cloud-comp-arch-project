@@ -1,3 +1,4 @@
+import sys
 import time
 import subprocess
 
@@ -11,12 +12,12 @@ MEMCACHED_PROCESS = "memcached"
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self, log_file):
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
         self.memcached_num_cores = 1
-        
+
         # thresholds
         self.T_mcd_1core = 25
         self.T_mcd_2core_low = 40
@@ -24,7 +25,7 @@ class Controller:
         self.T1_cpu = 50
         self.T2_cpu = 80
 
-        self.logger = scheduler_logger.SchedulerLogger()
+        self.logger = scheduler_logger.SchedulerLogger(log_file)
 
         self.container_info = {
             "blackscholes": {
@@ -35,7 +36,7 @@ class Controller:
             "canneal": {
                 "image": "anakli/cca:parsec_canneal",
                 "cpuset_cpus": "0",
-                "num_threads": 2                
+                "num_threads": 2
             },
             "dedup": {
                 "image": "anakli/cca:parsec_dedup",
@@ -45,7 +46,7 @@ class Controller:
             "ferret": {
                 "image": "anakli/cca:parsec_ferret",
                 "cpuset_cpus": "0",
-                "num_threads": 2                
+                "num_threads": 2
             },
             "freqmine": {
                 "image": "anakli/cca:parsec_freqmine",
@@ -60,7 +61,7 @@ class Controller:
             "vips": {
                 "image": "anakli/cca:parsec_vips",
                 "cpuset_cpus": "0",
-                "num_threads": 2                
+                "num_threads": 2
             }
         }
 
@@ -124,6 +125,7 @@ class Controller:
     def expand_memcached_to_2_cores(self):
         pid = self._get_main_pid(MEMCACHED_PROCESS)
         self.memcached_num_cores = 2
+        self.logger.update_cores(self.get_job_from_container_name("memcached"), ["0","1"])
         if pid and pid != "0":
             self._set_cpu_affinity(pid, "0-1")
         else:
@@ -133,6 +135,7 @@ class Controller:
     def constrain_memcached_to_1_core(self):
         pid = self._get_main_pid(MEMCACHED_PROCESS)
         self.memcached_num_cores = 1
+        self.logger.update_cores(self.get_job_from_container_name("memcached"), ["0"])
         if pid and pid != "0":
             self._set_cpu_affinity(pid, "0")
         else:
@@ -187,14 +190,21 @@ class Controller:
                 self.logger.job_start(self.get_job_from_container_name(container.name), core.split(","), self.container_info[container.name]["num_threads"])
                 print(f"starting container: {container.name}")
                 return
-            
-    
+
+
+    def remove_core(self, container, core):
+        cores = self.docker_client.containers.get(container).attrs['HostConfig'].get('CpusetCpus', '').split(",")
+        if str(core) in cores:
+            cores.remove(str(core))
+            self.logger.update_cores(self.get_job_from_container_name(container), cores)
+            self.docker_client.containers.get(container).update(cpuset_cpus=",".join(cores))
+
     def add_core(self, container, core):
-        new_cores = self.docker_client.containers.get(container).attrs['HostConfig'].get('CpusetCpus', '')
-        if str(core) not in new_cores:
-            new_cores = f"{new_cores},{core}"
-            self.logger.update_cores(self, self.get_job_from_container_name(container), new_cores.split(","))
-        self.docker_client.containers.get(container).update(cpuset_cpus=f"{new_cores}")
+        cores = self.docker_client.containers.get(container).attrs['HostConfig'].get('CpusetCpus', '')
+        if str(core) not in cores:
+            new_cores = f"{cores},{core}"
+            self.logger.update_cores(self.get_job_from_container_name(container), new_cores.split(","))
+            self.docker_client.containers.get(container).update(cpuset_cpus=f"{new_cores}")
 
 
     def get_per_core_cpu_usage(self) -> list:
@@ -260,13 +270,13 @@ class Controller:
         self.docker_client.containers.get(job_name).unpause()
 
 
-    def basic_sequential_schedule(self):
+    def basic_sequential_schedule_with_memcached(self):
         self.pull_images()
         start_time = time.time()
         self.create_all_containers()
 
         for job_name in self.container_info:
-            container = self.docker_client.containers.get(job_name)           
+            container = self.docker_client.containers.get(job_name)
             container.update(cpuset_cpus="1,2,3")
             container.start()
             self.logger.job_start(self.get_job_from_container_name(job_name), ["1", "2", "3"], 2)
@@ -280,6 +290,19 @@ class Controller:
                     is_running = False
                     print(f"job {job_name} finished")
                     self.logger.job_end(self.get_job_from_container_name(job_name))
+                else:
+                    memcached_cpu = self.get_memcached_cpu_usage()
+                    if self.memcached_num_cores == 1:
+                        if memcached_cpu > 40:
+                            self.expand_memcached_to_2_cores()
+                    else:
+                        if memcached_cpu < 80:
+                            self.constrain_memcached_to_1_core()
+                            self.add_core(job_name, "1")
+                        elif memcached_cpu <= 140:
+                            self.add_core(job_name, "1")
+                        elif memcached_cpu > 140:
+                            self.remove_core(job_name, "1")
                 time.sleep(1)
 
         end_time = time.time()
@@ -386,22 +409,9 @@ class Controller:
 
 
 def main():
-    c = Controller()
-    # c.create_all_containers()
-    # c.schedule_next_job('0')
-    # # c.start_all_containers()
-    # r1 = c.get_containers_on_core('0')
-    # print(f"on core {r1}")
-    # r2 = c.get_containers_on_corei_not_corej("0", "1")
-    # print(f"core0 not core1 {r2}")
-    # r3 = c.get_containers_on_corei_not_corej("1", "0")
-    # print(f"core1 not core0 {r3}")
-    # c.gather_finished_container()
-    # print(f"finished {c.finished}")
-    # u = c.get_memcached_resource_usage()
-    # print(u)
-    #c.schedule()
-    c.basic_sequential_schedule()
+    log_file = sys.argv[1]
+    c = Controller(log_file)
+    c.basic_sequential_schedule_with_memcached()
 
 
 if __name__ == "__main__":

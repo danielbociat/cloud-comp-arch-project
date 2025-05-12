@@ -33,7 +33,7 @@ def get_container_runtimes(memcache_server, file):
     subprocess.run(
         ["gcloud", "compute", "scp",
          f"ubuntu@{memcache_server}:~/{file}",
-         f"part4/results/2a/{file}",
+         f"part4/results/subpart2/{file}",
          "--zone", "europe-west1-b",
          "--ssh-key-file", "~/.ssh/cloud-computing"])
 
@@ -103,10 +103,10 @@ if __name__ == '__main__':
                         "chmod +x ~/update_mcperf.sh && ~/update_mcperf.sh"])
         print("Updated mcperf in client agent")
 
-    subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_agent}", "--zone", "europe-west1-b",
-                      "--ssh-key-file", "~/.ssh/cloud-computing", "--quiet", "--command",
-                      "cd memcache-perf-dynamic && ./mcperf -T 8 -A"], stdout=subprocess.DEVNULL)
-    print("Started mcperf in client agent")
+        subprocess.Popen(["gcloud", "compute", "ssh", f"ubuntu@{client_agent}", "--zone", "europe-west1-b",
+                        "--ssh-key-file", "~/.ssh/cloud-computing", "--quiet", "--command",
+                        "cd memcache-perf-dynamic && ./mcperf -T 8 -A"], stdout=subprocess.DEVNULL)
+        print("Started mcperf in client agent")
 
     if not args.no_setup:
         subprocess.run(
@@ -204,6 +204,8 @@ if __name__ == '__main__':
                                 f"pkill -f measure-cpu-utilisation.sh"
                                 ])
     elif args.subpart == "2":
+        container_runtime_file = f"container-runtime-{formatted_time}"
+        qps_file = f"~/results-part4.2-{formatted_time}.txt"
 
         if not args.no_setup:
             print("Upload and start controller on the server...")
@@ -226,24 +228,34 @@ if __name__ == '__main__':
 
             print("update server")
             update_server_config(num_threads=2,
-                                 num_cores=2,
+                                 num_cores=1,
                                  memcache_server=memcache_server,
                                  memcache_server_internal_ip=memcache_server_internal_ip
                                  )
             print(memcache_server_internal_ip)
-            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
-                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                            f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
-            print("Fire in the background...")
-            subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
-                            "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                            f"nohup bash -c 'cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} -a {client_agent_internal_ip} \
-                                                 --noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 1800 --qps_interval 10 --qps_min 5000 --qps_max 180000' \
-                                                  > ~/results-part4.2-{formatted_time}.txt 2>&1 < /dev/null &"
-                            ])
+        subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{client_measure}", "--zone", "europe-west1-b",
+                        "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
+                        f"cd memcache-perf-dynamic && ./mcperf -s {memcache_server_internal_ip} --loadonly"])
+        print("Fire in the background...")
+
+        remote_mcperf_cmd = (
+            f"nohup ~/memcache-perf-dynamic/mcperf "
+            f"-s {memcache_server_internal_ip} "
+            f"-a {client_agent_internal_ip} "
+            "--noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 1200 "
+            "--qps_interval 10 --qps_min 5000 --qps_max 180000 "
+            f"> {qps_file} 2>&1 < /dev/null &"
+        )
+
+        subprocess.run([
+            "gcloud", "compute", "ssh", f"ubuntu@{client_measure}",
+            "--zone", "europe-west1-b",
+            "--ssh-key-file", "~/.ssh/cloud-computing",
+            "--command", remote_mcperf_cmd
+        ])
 
         print("Start the controller...")
-        container_runtime_file = f"container-runtime-{formatted_time}"
+
         subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         f"bash -c 'sudo apt-get install python3-pip && \
@@ -259,8 +271,8 @@ if __name__ == '__main__':
         print("copy qps results locally")
         subprocess.run(
             ["gcloud", "compute", "scp",
-             f"ubuntu@{client_measure}:~/results-part4.2-{formatted_time}.txt",
-             f"part4/results/2a/results-part4.2-{formatted_time}.txt",
+             f"ubuntu@{client_measure}:{qps_file}",
+             f"part4/results/subpart2/results-part4.2-{formatted_time}.txt",
              "--zone", "europe-west1-b",
              "--ssh-key-file", "~/.ssh/cloud-computing"])
 

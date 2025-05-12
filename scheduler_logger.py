@@ -18,10 +18,8 @@ class Job(Enum):
 
 
 class SchedulerLogger:
-    def __init__(self):
-        start_date = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        self.file = open(f"log{start_date}.txt", "w")
+    def __init__(self, file):
+        self.file = open(file, "w")
         self._log("start", Job.SCHEDULER)
 
     def _log(self, event: str, job_name: Job, args: str = "") -> None:
