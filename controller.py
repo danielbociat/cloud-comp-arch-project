@@ -16,7 +16,7 @@ class Controller:
         self.docker_client = docker.from_env()
         self.finished = list()
         self.memcached_single_core = True
-        self.memcached_num_cores = 1
+        self.memcached_num_cores = 2
 
         # thresholds
         self.T_mcd_1core = 25
@@ -103,10 +103,8 @@ class Controller:
                 text=True,
                 check=True
             )
-            print(f"{service_name} PID: {result}")
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            print(f"Failed to get PID for {service_name}: {e.stderr}")
             return None
 
 
@@ -146,7 +144,6 @@ class Controller:
         result = list()
         for container in self.docker_client.containers.list(filters={"status": "running"}):
             if str(core) in container.attrs['HostConfig'].get('CpusetCpus', ''):
-                print(container.attrs['HostConfig'].get('CpusetCpus', ''))
                 result.append(container.name)
         return result
 
@@ -156,7 +153,6 @@ class Controller:
         result = list()
         for container in self.docker_client.containers.list(filters={"status": "running"}):
             if str(core1) in container.attrs['HostConfig'].get('CpusetCpus', '') and not str(core2) in container.attrs['HostConfig'].get('CpusetCpus', ''):
-                print(container.attrs['HostConfig'].get('CpusetCpus', ''))
                 result.append(container.name)
         return result
 
@@ -208,14 +204,11 @@ class Controller:
 
 
     def get_per_core_cpu_usage(self) -> list:
-        cpu_per_core = psutil.cpu_percent(percpu=True)
-        time.sleep(1)
-        cpu_per_core = psutil.cpu_percent(percpu=True) # twice because first call is unreliable
+        cpu_per_core = psutil.cpu_percent(interval=0.5, percpu=True)
         return cpu_per_core
     
 
-    def get_memcached_cpu_usage(self) -> float:
-        cpu_per_core = self.get_per_core_cpu_usage()
+    def get_memcached_cpu_usage(self, cpu_per_core) -> float:
         if self.memcached_num_cores == 1:
             return cpu_per_core[0]
         else: # memcached has 2 cores: 0,1
@@ -291,7 +284,9 @@ class Controller:
                     print(f"job {job_name} finished")
                     self.logger.job_end(self.get_job_from_container_name(job_name))
                 else:
-                    memcached_cpu = self.get_memcached_cpu_usage()
+                    cpu_per_core = self.get_per_core_cpu_usage()
+                    memcached_cpu = self.get_memcached_cpu_usage(cpu_per_core)
+                    self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
                     if self.memcached_num_cores == 1:
                         if memcached_cpu > 40:
                             self.expand_memcached_to_2_cores()
@@ -303,7 +298,6 @@ class Controller:
                             self.add_core(job_name, "1")
                         elif memcached_cpu > 140:
                             self.remove_core(job_name, "1")
-                time.sleep(1)
 
         end_time = time.time()
         print(f"took {end_time - start_time} seconds")

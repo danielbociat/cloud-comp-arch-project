@@ -52,6 +52,9 @@ class SchedulerLogger:
 
         self._log("unpause", job)
 
+    def log_cpu_utilisation(self, job:Job, cpu: list):
+        self._log("cpu %", job, ",".join([str(c) for c in cpu]))
+
     def custom_event(self, job:Job, comment: str):
         self._log("custom", job, urllib.parse.quote_plus(comment))
 

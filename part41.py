@@ -204,7 +204,7 @@ if __name__ == '__main__':
                                 f"pkill -f measure-cpu-utilisation.sh"
                                 ])
     elif args.subpart == "2":
-        container_runtime_file = f"container-runtime-{formatted_time}"
+        container_runtime_file = f"container-runtime-{formatted_time}.txt"
         qps_file = f"~/results-part4.2-{formatted_time}.txt"
 
         if not args.no_setup:
@@ -228,7 +228,7 @@ if __name__ == '__main__':
 
             print("update server")
             update_server_config(num_threads=2,
-                                 num_cores=1,
+                                 num_cores=2,
                                  memcache_server=memcache_server,
                                  memcache_server_internal_ip=memcache_server_internal_ip
                                  )
@@ -260,7 +260,6 @@ if __name__ == '__main__':
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         f"bash -c 'sudo apt-get install python3-pip && \
                         sudo pip install --break-system-packages -r requirements.txt && \
-                        sudo groupadd docker && \
                         sudo usermod -aG docker $USER && \
                           sudo apt install -y docker.io && \
                           sudo python3 -u controller.py {container_runtime_file}'"])
