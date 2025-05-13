@@ -294,7 +294,7 @@ class Controller:
                             if memcached_cpu > 40:
                                 self.expand_memcached_to_2_cores()
                         else:
-                            if memcached_cpu < 80:
+                            if memcached_cpu < 30:
                                 self.constrain_memcached_to_1_core()
                                 self.add_core(job_name, "1")
                             elif memcached_cpu <= 140:
@@ -302,6 +302,8 @@ class Controller:
                             elif memcached_cpu > 140:
                                 self.remove_core(job_name, "1")
                     else:
+                        if self.memcached_num_cores == 1:
+                            self.expand_memcached_to_2_cores()
                         time.sleep(1)
 
         end_time = time.time()
