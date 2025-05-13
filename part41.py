@@ -84,11 +84,6 @@ if __name__ == '__main__':
                         "chmod +x ~/install_memcached_part4_1.sh && ~/install_memcached_part4_1.sh"])
         print("Installed memcached in the server.")
 
-        # check memcached started
-        print("check memcached started")
-        subprocess.run(["gcloud", "compute", "ssh", f"ubuntu@{memcache_server}", "--zone", "europe-west1-b",
-                        "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
-                        "chmod +x ~/check-memcached-server.sh && ~/check-memcached-server.sh"], check=True)
 
 
     # install mcperf in client measure and agent
@@ -208,7 +203,7 @@ if __name__ == '__main__':
         qps_file = f"~/results-part4.2-{formatted_time}.txt"
 
         if not args.no_setup:
-            print("Upload and start controller on the server...")
+            print("Upload controller on the server...")
             subprocess.run(
                 ["gcloud", "compute", "scp", "controller.py", f"ubuntu@{memcache_server}:~/", "--zone", "europe-west1-b",
                  "--ssh-key-file", "~/.ssh/cloud-computing"])
@@ -242,7 +237,7 @@ if __name__ == '__main__':
             f"nohup ~/memcache-perf-dynamic/mcperf "
             f"-s {memcache_server_internal_ip} "
             f"-a {client_agent_internal_ip} "
-            "--noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 1200 "
+            "--noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 900 "
             "--qps_interval 10 --qps_min 5000 --qps_max 180000 "
             f"> {qps_file} 2>&1 < /dev/null &"
         )

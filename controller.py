@@ -26,42 +26,43 @@ class Controller:
         self.T2_cpu = 80
 
         self.logger = scheduler_logger.SchedulerLogger(log_file)
+        self.three_core_jobs = ["blackscholes", "vips", "ferret", "freqmine"]
 
         self.container_info = {
             "blackscholes": {
                 "image": "anakli/cca:parsec_blackscholes",
-                "cpuset_cpus": "0,1,2",
-                "num_threads": 2
+                "cpuset_cpus": "1,2,3",
+                "num_threads": 3
             },
             "canneal": {
                 "image": "anakli/cca:parsec_canneal",
-                "cpuset_cpus": "0",
+                "cpuset_cpus": "2,3",
                 "num_threads": 2
             },
             "dedup": {
                 "image": "anakli/cca:parsec_dedup",
-                "cpuset_cpus": "1",
+                "cpuset_cpus": "2,3",
                 "num_threads": 2
             },
             "ferret": {
                 "image": "anakli/cca:parsec_ferret",
-                "cpuset_cpus": "0",
-                "num_threads": 2
+                "cpuset_cpus": "1,2,3",
+                "num_threads": 3
             },
             "freqmine": {
                 "image": "anakli/cca:parsec_freqmine",
-                "cpuset_cpus": "0",
-                "num_threads": 2
+                "cpuset_cpus": "1,2,3",
+                "num_threads": 3
             },
-            "radix": {
+            "radix": {  # MUST BE ON 2 CORES ONLY, altfel face ca simion
                 "image": "anakli/cca:splash2x_radix",
-                "cpuset_cpus": "0",
+                "cpuset_cpus": "2,3",
                 "num_threads": 2
             },
             "vips": {
                 "image": "anakli/cca:parsec_vips",
-                "cpuset_cpus": "0",
-                "num_threads": 2
+                "cpuset_cpus": "1,2,3",
+                "num_threads": 3
             }
         }
 
@@ -270,10 +271,11 @@ class Controller:
 
         for job_name in self.container_info:
             container = self.docker_client.containers.get(job_name)
-            container.update(cpuset_cpus="1,2,3")
             container.start()
-            self.logger.job_start(self.get_job_from_container_name(job_name), ["1", "2", "3"], 2)
-            
+            self.logger.job_start(self.get_job_from_container_name(job_name),
+                                  self.container_info[job_name]["cpuset_cpus"].split(","),
+                                  self.container_info[job_name]["num_threads"])
+
             print(f"started container for job: {job_name}")
 
             is_running = True
@@ -284,122 +286,29 @@ class Controller:
                     print(f"job {job_name} finished")
                     self.logger.job_end(self.get_job_from_container_name(job_name))
                 else:
-                    cpu_per_core = self.get_per_core_cpu_usage()
-                    memcached_cpu = self.get_memcached_cpu_usage(cpu_per_core)
-                    self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
-                    if self.memcached_num_cores == 1:
-                        if memcached_cpu > 40:
-                            self.expand_memcached_to_2_cores()
+                    if job_name in self.three_core_jobs:
+                        cpu_per_core = self.get_per_core_cpu_usage()
+                        memcached_cpu = self.get_memcached_cpu_usage(cpu_per_core)
+                        self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
+                        if self.memcached_num_cores == 1:
+                            if memcached_cpu > 40:
+                                self.expand_memcached_to_2_cores()
+                        else:
+                            if memcached_cpu < 80:
+                                self.constrain_memcached_to_1_core()
+                                self.add_core(job_name, "1")
+                            elif memcached_cpu <= 140:
+                                self.add_core(job_name, "1")
+                            elif memcached_cpu > 140:
+                                self.remove_core(job_name, "1")
                     else:
-                        if memcached_cpu < 80:
-                            self.constrain_memcached_to_1_core()
-                            self.add_core(job_name, "1")
-                        elif memcached_cpu <= 140:
-                            self.add_core(job_name, "1")
-                        elif memcached_cpu > 140:
-                            self.remove_core(job_name, "1")
+                        time.sleep(1)
 
         end_time = time.time()
         print(f"took {end_time - start_time} seconds")
         self.logger.end()
         time.sleep(60)
 
-
-    def schedule(self):
-        self.pull_images()
-        start_time = time.time()
-        self.create_all_containers()
-        self.logger.job_start(self.get_job_from_container_name("memcached"), ["0"], 2)
-
-        while len(self.finished) < 7:
-            time.sleep(1)
-            mcd_cpu = self.get_memcached_cpu_usage()
-            if self.memcached_num_cores == 1 and mcd_cpu > self.T_mcd_1core:
-                self.expand_memcached_to_2_cores()
-            elif self.memcached_num_cores == 2 and mcd_cpu < self.T_mcd_2core_low:
-                self.constrain_memcached_to_1_core()
-            elif self.memcached_num_cores == 2 and mcd_cpu > self.T_mcd_2core_high: # very high latency, use 2 cores and pause everything on the second core
-                containers_core_1 = self.get_containers_on_core(1)
-                for container in containers_core_1:
-                    self.pause_container(container)
-
-            cpu_utilisation = self.get_per_core_cpu_usage() # assume it works per core
-            print(f"cpu usage: {cpu_utilisation}")
-            if cpu_utilisation[2] < self.T1_cpu: # low utilisation on core 2, schedule more
-                self.schedule_next_job("2")
-            elif cpu_utilisation[2] < self.T2_cpu: # medium utilisation, go to core 3
-                if cpu_utilisation[3] < self.T1_cpu:
-                    self.schedule_next_job("3")
-                elif cpu_utilisation[3] < self.T2_cpu:
-                    pass # should maybe schedule sth on 1?
-                else: # need to move to 1
-                    if cpu_utilisation[1] < self.T1_cpu:
-                        conts = self.get_containers_on_corei_not_corej(3, 1)
-                        if len(conts) != 0:
-                            self.add_core(conts[0], 1)
-                        else:
-                            containers3 = self.get_containers_on_core(3)
-                            if containers3:
-                                self.pause_container(containers3[0])
-                    else:
-                        containers3 = self.get_containers_on_core(3)
-                        if containers3:
-                            self.pause_container(containers3[0])
-
-            else: # high utilisation, add other cores for containers or pause something
-                if cpu_utilisation[3] < self.T1_cpu: # add core 3 for some container running on core 2
-                    conts = self.get_containers_on_corei_not_corej(2, 3)
-                    if len(conts) != 0:
-                        self.add_core(conts[0], 3)
-                    else: # TODO: logic
-                        pass
-                elif cpu_utilisation[3] < self.T2_cpu: # 3 has a balanced utilisation, try to move on 1
-                    if cpu_utilisation[1] < self.T1_cpu:
-                        conts = self.get_containers_on_corei_not_corej(2, 1)
-                        if len(conts) != 0:
-                            self.add_core(conts[0], 1)
-                        else:
-                            containers2 = self.get_containers_on_core(2)
-                            if containers2:
-                                self.pause_container(containers2[0])
-                    else:
-                        containers2 = self.get_containers_on_core(2)
-                        if containers2:
-                            self.pause_container(containers2[0])
-                else: # both 2 and 3 have high utilisation
-                    containers1 = self.get_containers_on_core(1)
-                    containers2 = self.get_containers_on_core(2)
-                    containers3 = self.get_containers_on_core(3)
-                    containers23 = [c for c in containers2 if c in containers3]
-                    # try to move sth on 1
-                    if cpu_utilisation[1] < self.T1_cpu:
-                        # prioritise moving containers that are shared by 2 and 3
-                        movable_conts = [c for c in containers23 if c not in containers1]
-                        if len(movable_conts) > 0:
-                                self.add_core(movable_conts[0], 1)
-                        # if nothing shared can be moved to 1, move sth from c2, stop sth on c3
-                        else:
-                            self.add_core(containers2[0], 1)
-                            if containers3:
-                                self.pause_container(containers3[0])
-                    else: # can't move to 1
-                        if containers23:
-                            self.pause_container(containers23[0])
-                        else:
-                            print(cpu_utilisation)
-                            if containers2:
-                                self.pause_container(containers2[0])
-                            if containers3:
-                                self.pause_container(containers3[0])
-
-
-            self.gather_finished_containers()
-        print("done looping")
-        end_time = time.time()
-        print(f"schedule loop took {end_time - start_time} seconds")
-        time.sleep(60)
-        self.logger.job_end(self.get_job_from_container_name("memcached"))
-        self.logger.end()
 
 
 def main():
