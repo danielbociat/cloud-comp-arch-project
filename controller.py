@@ -27,13 +27,14 @@ class Controller:
 
         self.logger = scheduler_logger.SchedulerLogger(log_file)
         self.three_core_jobs = ["blackscholes", "vips", "ferret", "freqmine"]
+        self.secondary_jobs = ["dedup"]
 
         self.container_info = {
-            "blackscholes": {
-                "image": "anakli/cca:parsec_blackscholes",
-                "cpuset_cpus": "1,2,3",
-                "num_threads": 3
-            },
+            # "blackscholes": {
+            #     "image": "anakli/cca:parsec_blackscholes",
+            #     "cpuset_cpus": "1,2,3",
+            #     "num_threads": 3
+            # },
             "canneal": {
                 "image": "anakli/cca:parsec_canneal",
                 "cpuset_cpus": "2,3",
@@ -41,29 +42,29 @@ class Controller:
             },
             "dedup": {
                 "image": "anakli/cca:parsec_dedup",
-                "cpuset_cpus": "2,3",
-                "num_threads": 2
-            },
-            "ferret": {
-                "image": "anakli/cca:parsec_ferret",
-                "cpuset_cpus": "1,2,3",
-                "num_threads": 3
-            },
-            "freqmine": {
-                "image": "anakli/cca:parsec_freqmine",
-                "cpuset_cpus": "1,2,3",
-                "num_threads": 3
-            },
-            "radix": {  # MUST BE ON 2 CORES ONLY, altfel face ca simion
-                "image": "anakli/cca:splash2x_radix",
-                "cpuset_cpus": "2,3",
-                "num_threads": 2
-            },
-            "vips": {
-                "image": "anakli/cca:parsec_vips",
-                "cpuset_cpus": "1,2,3",
-                "num_threads": 3
+                "cpuset_cpus": "1",
+                "num_threads": 1
             }
+            # "ferret": {
+            #     "image": "anakli/cca:parsec_ferret",
+            #     "cpuset_cpus": "1,2,3",
+            #     "num_threads": 3
+            # },
+            # "freqmine": {
+            #     "image": "anakli/cca:parsec_freqmine",
+            #     "cpuset_cpus": "1,2,3",
+            #     "num_threads": 3
+            # },
+            # "radix": {  # MUST BE ON 2 CORES ONLY, altfel face ca simion
+            #     "image": "anakli/cca:splash2x_radix",
+            #     "cpuset_cpus": "2,3",
+            #     "num_threads": 2
+            # },
+            # "vips": {
+            #     "image": "anakli/cca:parsec_vips",
+            #     "cpuset_cpus": "1,2,3",
+            #     "num_threads": 3
+            # }
         }
 
 
@@ -260,8 +261,17 @@ class Controller:
 
     
     def unpause_container(self, job_name: str):
+        print(f"unpausing container: {job_name}")
         self.logger.job_unpause(self.get_job_from_container_name(job_name))
         self.docker_client.containers.get(job_name).unpause()
+
+    def start_container(self, job_name):
+        container = self.docker_client.containers.get(job_name)
+        container.start()
+        self.logger.job_start(self.get_job_from_container_name(job_name),
+                              self.container_info[job_name]["cpuset_cpus"].split(","),
+                              self.container_info[job_name]["num_threads"])
+        print(f"started container for job: {job_name}")
 
 
     def basic_sequential_schedule_with_memcached(self):
@@ -269,14 +279,14 @@ class Controller:
         start_time = time.time()
         self.create_all_containers()
 
-        for job_name in self.container_info:
-            container = self.docker_client.containers.get(job_name)
-            container.start()
-            self.logger.job_start(self.get_job_from_container_name(job_name),
-                                  self.container_info[job_name]["cpuset_cpus"].split(","),
-                                  self.container_info[job_name]["num_threads"])
+        secondary_job_index = 0
 
-            print(f"started container for job: {job_name}")
+        for job_name in self.container_info:
+            if job_name in self.secondary_jobs:
+                continue
+
+            self.start_container(job_name)
+
 
             is_running = True
             while is_running:
@@ -294,7 +304,7 @@ class Controller:
                             if memcached_cpu > 40:
                                 self.expand_memcached_to_2_cores()
                         else:
-                            if memcached_cpu < 80:
+                            if memcached_cpu < 40:
                                 self.constrain_memcached_to_1_core()
                                 self.add_core(job_name, "1")
                             elif memcached_cpu <= 140:
@@ -302,8 +312,32 @@ class Controller:
                             elif memcached_cpu > 140:
                                 self.remove_core(job_name, "1")
                     else:
-                        time.sleep(1)
-
+                        cpu_per_core = self.get_per_core_cpu_usage()
+                        memcached_cpu = self.get_memcached_cpu_usage(cpu_per_core)
+                        self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
+                        if secondary_job_index > len(self.secondary_jobs) - 1:
+                            secondary_job = self.secondary_jobs[secondary_job_index]
+                            secondary_job_status = self.docker_client.containers.get(secondary_job).status
+                            if secondary_job_status == "exited":
+                                secondary_job_index += 1
+                        if self.memcached_num_cores == 1:
+                            if memcached_cpu > 40:
+                                self.expand_memcached_to_2_cores()
+                        else:
+                            if memcached_cpu < 40:
+                                self.constrain_memcached_to_1_core()
+                                if secondary_job_status == "created":
+                                    self.start_container(secondary_job)
+                                elif status == "paused":
+                                    self.unpause_container(secondary_job)
+                            elif memcached_cpu <= 140:
+                                if secondary_job_status == "created":
+                                    self.start_container(secondary_job)
+                                elif status == "paused":
+                                    self.unpause_container(secondary_job)
+                            elif memcached_cpu > 140:
+                                if secondary_job_status == "running":
+                                    self.pause_container(secondary_job)
         end_time = time.time()
         print(f"took {end_time - start_time} seconds")
         self.logger.end()

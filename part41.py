@@ -237,7 +237,7 @@ if __name__ == '__main__':
             f"nohup ~/memcache-perf-dynamic/mcperf "
             f"-s {memcache_server_internal_ip} "
             f"-a {client_agent_internal_ip} "
-            "--noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 900 "
+            "--noload -T 8 -C 8 -D 4 -Q 1000 -c 8 -t 200 "
             "--qps_interval 10 --qps_min 5000 --qps_max 180000 "
             f"> {qps_file} 2>&1 < /dev/null &"
         )
