@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parsec-ferret
+  name: ferret
   labels:
-    name: parsec-ferret
+    name: ferret
 spec:
   template:
     spec:
       containers:
       - image: anakli/cca:parsec_ferret
-        name: parsec-ferret
+        name: ferret
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "taskset -c <cores> ./run -a run -S parsec -p ferret -i native -n <n>"]
