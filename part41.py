@@ -146,7 +146,7 @@ if __name__ == '__main__':
 
     elif args.subpart == "1d":
         configs = [[2, 1], [2, 2]]  # [T, C]
-        NUM_RUNS = 2
+        NUM_RUNS = 3
         for [T, C] in configs:
             update_server_config(num_threads=T,
                                  num_cores=C,
@@ -180,7 +180,7 @@ if __name__ == '__main__':
                 subprocess.run(
                     ["gcloud", "compute", "scp",
                      f"ubuntu@{client_measure}:~/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
-                     f"part4/results/d/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
+                     f"part4/results/subpart1d/results-part4.1-threads{T}-cores{C}-run{i}-{formatted_time}.txt",
                      "--zone", "europe-west1-b",
                      "--ssh-key-file", "~/.ssh/cloud-computing"])
 
@@ -188,7 +188,7 @@ if __name__ == '__main__':
                 subprocess.run(
                     ["gcloud", "compute", "scp",
                      f"ubuntu@{memcache_server}:~/{cpu_log_remote}",
-                     f"part4/results/d/{cpu_log_remote}",
+                     f"part4/results/subpart1d/{cpu_log_remote}",
                      "--zone", "europe-west1-b",
                      "--ssh-key-file", "~/.ssh/cloud-computing"])
 
@@ -255,6 +255,7 @@ if __name__ == '__main__':
                         "--ssh-key-file", "~/.ssh/cloud-computing", "--command",
                         f"bash -c 'sudo apt-get install python3-pip && \
                         sudo pip install --break-system-packages -r requirements.txt && \
+                        sudo groupadd docker && \
                         sudo usermod -aG docker $USER && \
                           sudo apt install -y docker.io && \
                           sudo python3 -u controller.py {container_runtime_file}'"])
