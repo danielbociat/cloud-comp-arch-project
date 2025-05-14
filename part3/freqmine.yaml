@@ -12,7 +12,7 @@ spec:
         name: freqmine
         imagePullPolicy: Always
         command: ["/bin/sh"]
-        args: ["-c", "taskset -c 0,1 ./run -a run -S parsec -p freqmine -i native -n 2"]
+        args: ["-c", "taskset -c 0,1,2,3 ./run -a run -S parsec -p freqmine -i native -n 4"]
       restartPolicy: Never
       nodeSelector:
-        cca-project-nodetype: "node-d-4core"
+        cca-project-nodetype: "node-c-4core"

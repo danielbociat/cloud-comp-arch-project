@@ -15,4 +15,4 @@ spec:
         args: ["-c", "taskset -c 0,1 ./run -a run -S parsec -p dedup -i native -n 2"]
       restartPolicy: Never
       nodeSelector:
-        cca-project-nodetype: "node-a-2core"
+        cca-project-nodetype: "node-d-4core"
