@@ -22,15 +22,15 @@ class Controller:
         self.three_core_jobs = ["blackscholes", "vips", "ferret", "freqmine"]
 
         self.container_info = {
-            "blackscholes": {
-                "image": "anakli/cca:parsec_blackscholes",
-                "cpuset_cpus": "1,2,3",
-                "num_threads": 3
-            },
             "canneal": {
                 "image": "anakli/cca:parsec_canneal",
                 "cpuset_cpus": "2,3",
                 "num_threads": 2
+            },
+            "blackscholes": {
+                "image": "anakli/cca:parsec_blackscholes",
+                "cpuset_cpus": "1,2,3",
+                "num_threads": 3
             },
             "dedup": {
                 "image": "anakli/cca:parsec_dedup",
@@ -256,6 +256,7 @@ class Controller:
 
     
     def unpause_container(self, job_name: str):
+        print("unpausing")
         self.logger.job_unpause(self.get_job_from_container_name(job_name))
         self.docker_client.containers.get(job_name).unpause()
 
@@ -266,6 +267,8 @@ class Controller:
         self.create_all_containers()
 
         for job_name in self.container_info:
+            # if job_name in self.filler:
+            #     continue
             container = self.docker_client.containers.get(job_name)
             container.start()
             self.logger.job_start(self.get_job_from_container_name(job_name),
@@ -287,26 +290,28 @@ class Controller:
                         memcached_cpu = self.get_memcached_cpu_usage(cpu_per_core)
                         self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
                         if self.memcached_num_cores == 1:
-                            if memcached_cpu > 40:
+                            if memcached_cpu > 60:
                                 self.expand_memcached_to_2_cores()
                         else:
-                            if memcached_cpu < 30:
+                            if memcached_cpu < 80:
                                 self.constrain_memcached_to_1_core()
                                 self.add_core(job_name, "1")
                             elif memcached_cpu <= 140:
                                 self.add_core(job_name, "1")
-                            elif memcached_cpu > 140:
+                            elif memcached_cpu > 191:# 764 with 18-
                                 self.remove_core(job_name, "1")
                     else:
                         if self.memcached_num_cores == 1:
                             self.expand_memcached_to_2_cores()
+                        cpu_per_core = self.get_per_core_cpu_usage()
                         self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
-                        time.sleep(1)
+
 
         end_time = time.time()
         print(f"took {end_time - start_time} seconds")
-        self.logger.end()
         time.sleep(60)
+        self.logger.job_end(self.get_job_from_container_name("memcached"))
+        self.logger.end()
 
 
 
