@@ -1,6 +1,8 @@
 import os
 import math
 import csv
+import argparse
+import sys
 
 from pathlib import Path
 
@@ -10,7 +12,7 @@ import matplotlib.ticker as ticker
 
 MCPERF_OUTPUT_1A_PATH = Path("./data/part4/1a/")
 DATA_OUTPUT_1D_PATH = Path("./data/part4/1d/")
-NUM_RUNS = 1
+NUM_RUNS = 3
 
 
 class McperfResultData:
@@ -88,7 +90,7 @@ def parse_mcperf_output(output_path: Path) -> dict:
         if split[0] != "cpu":
             threads = int(split[2][-1])
             cores = int(split[3][-1])
-            num_run = int(split[4][-1])
+            num_run = int(split[4][-1]) - 1
             if (threads, cores) not in results:
                 results[(threads, cores)] = McperfResultData(NUM_RUNS)
             current_file = os.path.join(output_path, file_result)
@@ -116,7 +118,7 @@ def parse_cpu_util_output(data_file_path: Path) -> list:
         reader = csv.reader(csv_file, delimiter=',')
         for row in reader:
             # print(row)
-            if "time" not in row[0]:
+            if "time" not in row[0].lower():
                 total_cpu = float(row[1])
                 if total_cpu < 1.0:
                     continue
@@ -159,7 +161,7 @@ def get_cpu_usage(data_path: Path) -> dict:
         if split[0] == "cpu":
             num_threads = int(split[2][0])
             num_cores = int(split[3][0])
-            num_run = int(split[4][-1])
+            num_run = int(split[4][-1]) - 1
             parsed_cpu_util = parse_cpu_util_output(file_path)
 
             if (num_threads, num_cores) not in results:
@@ -171,7 +173,7 @@ def get_cpu_usage(data_path: Path) -> dict:
             num_threads = int(split[2][-1])
             num_cores = int(split[3][-1])
             parsed_timestamps = parse_mcperf_timestamps(file_path)
-            num_run = int(split[4][-1])
+            num_run = int(split[4][-1]) - 1
 
             if (num_threads, num_cores) not in results:
                 results[(num_threads, num_cores)] = {}
@@ -181,6 +183,7 @@ def get_cpu_usage(data_path: Path) -> dict:
             results[(num_threads, num_cores)][num_run]["mcperf_timestamps"] = parsed_timestamps
 
     # match cpu usage timestamps with mcperf load intervals
+    max_len = 0
     for key in results:
         cpu_usages = [[] for _ in range(NUM_RUNS)]
         for num_run in results[key]:
@@ -198,13 +201,29 @@ def get_cpu_usage(data_path: Path) -> dict:
                 idx += 1
                         
 
+        if NUM_RUNS > 0:
+            for num_run in range(0, NUM_RUNS):
+                current_len = len(cpu_usages[num_run]) 
+                if current_len > max_len:
+                    max_len = current_len
+            for num_run in range(0, NUM_RUNS):
+                len_diff = abs(len(cpu_usages[num_run]) - max_len)
+                for _ in range(len_diff):
+                    cpu_usages[num_run].insert(0, 0)
+
         # compute average 
         cpu_usage_averages = [0 for _ in range(len(cpu_usages[0]))]
         for i in range(len(cpu_usages[0])):
             for num_run in range(NUM_RUNS):
                 cpu_usage_averages[i] += cpu_usages[num_run][i]
         cpu_usage_averages = [val / NUM_RUNS for val in cpu_usage_averages]
-        results[key]["cpu_usage"] = cpu_usage_averages
+
+        # smoothen the curve
+        moving_averages = [cpu_usage_averages[0]]
+        for i in range(1, len(cpu_usage_averages)):
+             moving_averages.append(sum(cpu_usage_averages[max(0, i - 4):i]) / (i - max(0, i - 4)))
+
+        results[key]["cpu_usage"] = moving_averages
 
     return results
 
@@ -226,8 +245,8 @@ def plot_41a(results: dict):
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
 
     plt.xlim(0, 230000)
-    plt.xlabel("QPS")
-    plt.ylabel("p95 (ms)", rotation=0, labelpad=40)
+    plt.xlabel("QPSs")
+    plt.ylabel("p95 [ms]", rotation=0, labelpad=40)
     plt.title("p95 vs QPS for Each Configuration\nAveraged over 3 runs")
     plt.grid(True)
     plt.tight_layout()
@@ -236,7 +255,6 @@ def plot_41a(results: dict):
 
 
 def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
-    print(mcperf_results)
     for threads, cores in mcperf_results:
         qps, p95, _, _ = mcperf_results[(threads, cores)].get_plot_values()
         cpu_usage = cpu_usage_results[(threads, cores)]["cpu_usage"]
@@ -245,7 +263,7 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
         fig.set_dpi(300)
         line1, = ax1.plot(qps, p95, "go-",  label='p95')
         ax1.set_xlabel('QPS')
-        ax1.set_ylabel('p95 (ms)')
+        ax1.set_ylabel('p95 [ms]')
         ax1.tick_params(axis='y')
 
         ax2 = ax1.twinx()
@@ -259,6 +277,9 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
         ax1.yaxis.set_major_locator(ticker.MultipleLocator(0.1))
         ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
 
+        ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x)}%"))
+        ax2.set_ylim(0, cores * 100)
+
         slo_line = ax1.axhline(y=0.8, color='red', linestyle='--', linewidth=1, label='SLO (0.8 ms)')
 
         ax1.grid(True, which='both', axis='both')
@@ -268,7 +289,7 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
         ax1.legend(handles, labels, loc='upper left')
 
         plt.xlim(0, 230000)
-        plt.title(f"p95 and CPU Usage Versus QPS\n{threads} threads, {cores} cores")
+        plt.title(f"p95 and CPU Usage Versus QPS\n{threads} threads, {cores} cores\nAveraged over {NUM_RUNS} runs")
         fig.tight_layout()  # To prevent label cutoff
 
         #plt.show()
@@ -276,11 +297,23 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
 
 
 def main():
-    # results = parse_mcperf_output(MCPERF_OUTPUT_1A_PATH)
-    # plot_41a(results)
-    mcperf_results = parse_mcperf_output(DATA_OUTPUT_1D_PATH)
-    cpu_usage_results = get_cpu_usage(DATA_OUTPUT_1D_PATH)
-    plot_41d(mcperf_results, cpu_usage_results)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--part", "-p", help="Subpart for which to plot. Can be '1a' or '1d'.")
+    args = parser.parse_args()
+
+    if args.part is None:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.part == "1d":
+        mcperf_results = parse_mcperf_output(DATA_OUTPUT_1D_PATH)
+        cpu_usage_results = get_cpu_usage(DATA_OUTPUT_1D_PATH)
+        plot_41d(mcperf_results, cpu_usage_results)
+    elif args.part == "1a":
+        results = parse_mcperf_output(MCPERF_OUTPUT_1A_PATH)
+        plot_41a(results)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
