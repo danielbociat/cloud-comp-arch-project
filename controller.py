@@ -18,13 +18,6 @@ class Controller:
         self.memcached_single_core = True
         self.memcached_num_cores = 2
 
-        # thresholds
-        self.T_mcd_1core = 25
-        self.T_mcd_2core_low = 40
-        self.T_mcd_2core_high = 150
-        self.T1_cpu = 50
-        self.T2_cpu = 80
-
         self.logger = scheduler_logger.SchedulerLogger(log_file)
         self.three_core_jobs = ["blackscholes", "vips", "ferret", "freqmine"]
 
@@ -201,11 +194,14 @@ class Controller:
         if str(core) not in cores:
             new_cores = f"{cores},{core}"
             self.logger.update_cores(self.get_job_from_container_name(container), new_cores.split(","))
-            self.docker_client.containers.get(container).update(cpuset_cpus=f"{new_cores}")
+            try:
+                self.docker_client.containers.get(container).update(cpuset_cpus=f"{new_cores}")
+            except:
+                print("Something wrong happened. Container might have stopped before adding a core.")
 
 
     def get_per_core_cpu_usage(self) -> list:
-        cpu_per_core = psutil.cpu_percent(interval=0.5, percpu=True)
+        cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
         return cpu_per_core
     
 
@@ -304,6 +300,7 @@ class Controller:
                     else:
                         if self.memcached_num_cores == 1:
                             self.expand_memcached_to_2_cores()
+                        self.logger.log_cpu_utilisation(self.get_job_from_container_name("memcached"), cpu_per_core)
                         time.sleep(1)
 
         end_time = time.time()
