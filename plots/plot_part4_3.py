@@ -220,7 +220,7 @@ ax2.set_xlabel("Time [s]")
 
 # Adjust layout
 plt.tight_layout()
-plt.show()
+#plt.show()
 plt.savefig(f"output/part4/Plot_4_3_B.png", dpi=400)
 
 
