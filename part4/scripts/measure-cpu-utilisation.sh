@@ -1,7 +1,7 @@
 output_file=$1
 
 # Initialize the CSV file with headers
-#echo "Time (s), CPU TOTAL, CPU 0, CPU 1, CPU 2, CPU 3 " > "$output_file"
+echo "Time (s), CPU TOTAL, CPU 0, CPU 1, CPU 2, CPU 3 " > "$output_file"
 
 
 
@@ -26,7 +26,7 @@ while true; do
 
 
       read -r cpu user nice system idle iowait irq softirq steal guest guest_nice <<< "$line"
-      echo "$cpu"
+#      echo "$cpu"
 
       # cumulative CPU usage
       total=$((user + nice + system + idle + iowait + irq + softirq + steal))
@@ -49,7 +49,7 @@ while true; do
     done
 
     echo "$output" >> "$output_file"
-    echo "$output"
+#    echo "$output"
 
     # Wait for 5 seconds before the next iteration
     sleep 5
