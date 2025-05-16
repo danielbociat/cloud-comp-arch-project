@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: freqmine
+  labels:
+    name: freqmine
+spec:
+  template:
+    spec:
+      containers:
+      - image: anakli/cca:parsec_freqmine
+        name: freqmine
+        imagePullPolicy: Always
+        command: ["/bin/sh"]
+        args: ["-c", "taskset -c <cores> ./run -a run -S parsec -p freqmine -i native -n <n>"]
+      restartPolicy: Never
+      nodeSelector:
+        cca-project-nodetype: "<node_label>"

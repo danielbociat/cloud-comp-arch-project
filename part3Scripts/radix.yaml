@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: radix
+  labels:
+    name: radix
+spec:
+  template:
+    spec:
+      containers:
+      - image: anakli/cca:splash2x_radix
+        name: radix
+        imagePullPolicy: Always
+        command: ["/bin/sh"]
+        args: ["-c", "taskset -c 0 ./run -a run -S splash2x -p radix -i native -n 1"]
+      restartPolicy: Never
+      nodeSelector:
+        cca-project-nodetype: "node-a-2core"
