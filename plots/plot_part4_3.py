@@ -29,7 +29,7 @@ ts_start = None
 qps = []
 p95 = []
 
-with open("../part4/results/subpart2/results-part4.2-13-05-2025-18-51.txt", "r") as f:
+with open("../part4/results/subpart2/results-part4.2-16-05-2025-03-11.txt", "r") as f:
     lines = f.readlines()
     intervals_line = lines[1].split()
     num_intervals = int(intervals_line[5])
@@ -45,14 +45,14 @@ with open("../part4/results/subpart2/results-part4.2-13-05-2025-18-51.txt", "r")
     timestamps = [ts_start + offset for offset in interval_offsets]
 
     for line in lines:
-         print(line)
+         #print(line)
          split = line.split()
          if split and split[0] == "read":
               p95.append(float(split[12]) / 1000)
               qps.append(float(split[16]))
 
 
-with open("../part4/results/subpart2/container-runtime-13-05-2025-18-51.txt", "r") as f:
+with open("../part4/results/subpart2/container-runtime-16-05-2025-03-11.txt", "r") as f:
         lines = f.readlines()
         dt = datetime.fromisoformat((lines[0].split())[0]) 
         dt = dt.replace(tzinfo=timezone.utc)
@@ -78,12 +78,12 @@ with open("../part4/results/subpart2/container-runtime-13-05-2025-18-51.txt", "r
             if lines_split[1] == "update_cores":
                  actions[lines_split[2]].append((started_at_ts-start_time_reference, len(lines_split[-1].split(","))))
 
-for job in jobs:
-     for action in actions[job]:
-          print(action)
+# for job in jobs:
+#      for action in actions[job]:
+#           print(action)
 
 
-time = np.arange(0, 900, 10)  # every 20 seconds
+time = np.arange(0, 850, 10)  # every 20 seconds
 
 
 # Create figure and axis
@@ -134,25 +134,39 @@ for i, job in enumerate(jobs):
         
         no_cores = action[-1]
 
+print(actions["memcached"][0])
+
 memcached_cores = [2]
 memcached_times = [0]
-prev_time = actions["memcached"][0][0]
-no_cores = actions["memcached"][0][1]
+if len(actions["memcached"]) > 0:
+     prev_time = actions["memcached"][0][0]
+     no_cores = actions["memcached"][0][1]   
+     
+     memcached_cores.append(2)
+     memcached_times.append(prev_time)
+
 
 for action in actions["memcached"][1:]:
-    memcached_cores.append(no_cores)
-    memcached_times.append(prev_time)
+     print(action)
+     memcached_cores.append(no_cores)
+     memcached_times.append(prev_time)
 
-    new_time = action[0]
-    prev_time = new_time
+     new_time = action[0]
+     prev_time = new_time
 
-    # memcached_cores.append(no_cores)
-    # memcached_times.append(new_time)
-    
-    no_cores = action[-1]
+     # memcached_cores.append(no_cores)
+     # memcached_times.append(new_time)
+
+
+     if action[1] != "-1" and action[1] != -1:
+          no_cores = action[1]
 
 memcached_cores.append(no_cores)
-memcached_times.append(900)
+print("AAAAAAAAA", no_cores)
+memcached_times.append(850)
+
+print(memcached_cores)
+print(memcached_times)
 
 
 
