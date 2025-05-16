@@ -224,6 +224,7 @@ def get_cpu_usage(data_path: Path) -> dict:
              moving_averages.append(sum(cpu_usage_averages[max(0, i - 4):i]) / (i - max(0, i - 4)))
 
         results[key]["cpu_usage"] = moving_averages
+        # results[key]["cpu_usage"] = cpu_usage_averages
 
     return results
 
@@ -262,13 +263,13 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
         fig, ax1 = plt.subplots(figsize=(14, 8))
         fig.set_dpi(300)
         line1, = ax1.plot(qps, p95, "go-",  label='p95')
-        ax1.set_xlabel('QPS')
-        ax1.set_ylabel('p95 [ms]')
+        ax1.set_xlabel('QPS', fontsize=14)
+        ax1.set_ylabel('p95 [ms]', rotation=0, labelpad=40, fontsize=12)
         ax1.tick_params(axis='y')
 
         ax2 = ax1.twinx()
-        line2, = ax2.plot(qps, cpu_usage, "bs--", label='cpu usage')
-        ax2.set_ylabel('cpu usage')
+        line2, = ax2.plot(qps, cpu_usage, "bs--", label='Cpu Usage')
+        ax2.set_ylabel('Cpu Usage', rotation=0, labelpad=40, fontsize=12)
         ax2.tick_params(axis='y')
 
         ax1.xaxis.set_major_locator(ticker.MultipleLocator(10000))
@@ -282,18 +283,22 @@ def plot_41d(mcperf_results: dict, cpu_usage_results: dict):
 
         slo_line = ax1.axhline(y=0.8, color='red', linestyle='--', linewidth=1, label='SLO (0.8 ms)')
 
+        ax1.tick_params(axis='y', labelsize=12)
+        ax1.tick_params(axis='x', labelsize=11)
+        ax2.tick_params(axis='y', labelsize=12)
+
         ax1.grid(True, which='both', axis='both')
 
         handles = [line1, slo_line, line2]
         labels = [h.get_label() for h in handles]
-        ax1.legend(handles, labels, loc='upper left')
+        ax1.legend(handles, labels, loc='upper left', fontsize=12)
 
         plt.xlim(0, 230000)
-        plt.title(f"p95 and CPU Usage Versus QPS\n{threads} threads, {cores} cores\nAveraged over {NUM_RUNS} runs")
+        # plt.title(f"p95 and CPU Usage Versus QPS\n{threads} threads, {cores} cores\nAveraged over {NUM_RUNS} runs")
         fig.tight_layout()  # To prevent label cutoff
 
         #plt.show()
-        plt.savefig(f"{threads}_threads_{cores}_cores.png", dpi=400)
+        plt.savefig(f"part4_1d_{threads}_threads_{cores}_cores.png", dpi=400)
 
 
 def main():
